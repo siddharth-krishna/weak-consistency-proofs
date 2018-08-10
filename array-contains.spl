@@ -1,0 +1,82 @@
+// A simplified hash table implementation with weakly consistent contains method
+
+type SeqInvoc;  // sequence of invocations
+
+// A function to calculate the abstract state after a sequential execution
+function state(s: SeqInvoc) returns (m: Map<Int, Int>);
+
+// A function to restrict a SeqInvoc to invocations involving key k
+function restr(s: SeqInvoc, k: Int) returns (t: SeqInvoc);
+
+// The mapping of key k depends only invocations involving k
+axiom forall s: SeqInvoc, k: Int :: state(s)[k] == state(restr(s, k))[k]
+
+var lin: SeqInvoc;  // a shared global variable that builds the linearization
+// Need to restrict actions/interference to only increase lin
+
+
+// Concrete state of implementation
+var table: Array<Int, Int>;
+
+procedure put(k: Int, v: Int)
+  requires 0 <= k < table.length
+  requires acc(table)
+  requires forall 0 <= i < table.length :: table[i] == state(lin)[i]
+  ensures acc(table)
+  ensures forall 0 <= i < table.length :: table[i] == state(lin)[i]
+{
+  table[k] := v;
+  lin := append(lin, this);
+}
+
+procedure get(k: Int) returns (v: Int)
+  requires 0 <= k < table.length
+  requires acc(table)
+  requires forall 0 <= k < table.length :: table[k] == state(lin)[k]
+  ensures acc(table)
+  ensures forall 0 <= i < table.length :: table[i] == state(lin)[i]
+{
+  v := table[k];
+  pure assert state(lin)[k] == v;
+  lin := append(lin, this);
+  return v;
+}
+
+procedure contains(v: Int) returns (res: Bool)
+  requires acc(table)
+  requires forall 0 <= i < table.length :: table[i] == state(lin)[i]
+  ensures acc(table)
+  ensures forall 0 <= i < table.length :: table[i] == state(lin)[i]
+{
+  ghost var vis := lin;  // Need to show forall j in hb :: j.vis subsetof vis
+  // ==> vis subsetof lin
+  
+  var k := 0;
+  while (k < table.length)
+    invariant 0 <= k <= table.length
+    invariant forall 0 <= i < k :: state(vis)[i] != v
+    invariant forall 0 <= i < table.length :: table[i] == state(lin)[i]
+  {
+    var tv := table[k];
+
+    vis := vis ++ restr(lin, k)[k];
+    // tv == table[k] == state(lin)[k] == state(restr(lin, k))[k] == state(restr(vis, k))[k] == state(vis)[k]
+    pure assert tv == state(vis)[k];
+    // also, restr(lin, k) subsetof lin ==> vis subsetof lin
+
+    if (tv == v) {
+      pure assert state(vis)[k] == v;
+      lin := append(lin, this);
+      vis := append(vis, this);
+      pure assert vis subsetof lin;
+      return true;
+    }
+    // else tv != table[k] == state(lin)[k] == state(restr(lin, k))[k] == state(restr(vis, k))[k] == state(vis)[k]
+    k := k + 1;
+  }
+  pure assert forall 0 <= i < table.length :: state(vis)[i] != v;
+  lin := append(lin, this);
+  vis := append(vis, this);
+  pure assert vis subsetof lin;
+  return false;
+}
