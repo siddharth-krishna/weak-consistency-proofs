@@ -58,15 +58,27 @@ axiom (forall s, t: SeqInvoc, k, k1: int :: k != k1 ==> state(union(s, restr(t, 
 
 // ---------- Some lemmas that we need
 
-procedure lemma_append_effect(s1, s2: SeqInvoc, o: Invoc, m, k, v: int)
-  requires s2 == append(s1, o) && o == createInvoc(m, k, v);
-  ensures (forall i: int :: i != k ==> state(s1)[i] == state(s2)[i]);
-  ensures m == 0 ==> state(s2)[k] == v;
-  ensures m == 1 || m == 2 ==> state(s2)[k] == state(s1)[k];
-{
-  assume false;
-}
+axiom (forall s1, s2: SeqInvoc, o: Invoc, m, k, v: int ::
+        s2 == append(s1, o) && o == createInvoc(m, k, v) ==>
+          (forall i: int :: i != k ==> state(s1)[i] == state(s2)[i])
+);
 
+axiom (forall s1, s2: SeqInvoc, o: Invoc, m, k, v: int ::
+        s2 == append(s1, o) && o == createInvoc(m, k, v) ==>
+          (m == 0 ==> state(s2)[k] == v)
+);
+
+axiom (forall s1, s2: SeqInvoc, o: Invoc, m, k, v: int ::
+        s2 == append(s1, o) && o == createInvoc(m, k, v) ==>
+          (m == 1 || m == 2 ==> state(s2)[k] == state(s1)[k])
+);
+
+axiom (forall s0, s1, t: SeqInvoc, k: int ::
+        s1 == union(s0, restr(t, k)) && subseq(s0, t) ==>
+          restr(s1, k) == restr(t, k)
+);
+
+// TODO remove this lemma too
 procedure lemma_union_restr(s0, s1, t: SeqInvoc, k: int)
   requires s1 == union(s0, restr(t, k)) && subseq(s0, t);
   ensures restr(s1, k) == restr(t, k);
@@ -102,7 +114,6 @@ procedure put(k: int, v: int)
   old_lin := lin;
   invoc := createInvoc(0, k, v);
   lin := append(lin, invoc);
-  call lemma_append_effect(old_lin, lin, invoc, 0, k, v);
 }
 
 procedure get(k: int) returns (v: int)
@@ -118,7 +129,6 @@ procedure get(k: int) returns (v: int)
   old_lin := lin;
   invoc := createInvoc(1, k, v);
   lin := append(lin, invoc);
-  call lemma_append_effect(old_lin, lin, invoc, 1, k, v);
 }
 
 procedure contains(v: int) returns (res: bool, vis: SeqInvoc, witness_k: int)
@@ -163,8 +173,6 @@ procedure contains(v: int) returns (res: bool, vis: SeqInvoc, witness_k: int)
       old_vis := vis;
       lin := append(lin, invoc);
       vis := append(vis, invoc);
-      call lemma_append_effect(old_lin, lin, invoc, 2, k, v);
-      call lemma_append_effect(old_vis, vis, invoc, 2, k, v);
       witness_k := k;
 
       res := true;
@@ -178,8 +186,6 @@ procedure contains(v: int) returns (res: bool, vis: SeqInvoc, witness_k: int)
   old_vis := vis;
   lin := append(lin, invoc);
   vis := append(vis, invoc);
-  call lemma_append_effect(old_lin, lin, invoc, 2, k, v);
-  call lemma_append_effect(old_vis, vis, invoc, 2, k, v);
 
   res := false;
   return;
