@@ -78,14 +78,6 @@ axiom (forall s0, s1, t: SeqInvoc, k: int ::
           restr(s1, k) == restr(t, k)
 );
 
-// TODO remove this lemma too
-procedure lemma_union_restr(s0, s1, t: SeqInvoc, k: int)
-  requires s1 == union(s0, restr(t, k)) && subseq(s0, t);
-  ensures restr(s1, k) == restr(t, k);
-{
-  assume false;
-}
-
 
 // ---------- Logical and concrete shared state
 
@@ -139,8 +131,7 @@ procedure contains(v: int) returns (res: bool, vis: SeqInvoc, witness_k: int)
   ensures res ==> state(vis)[witness_k] == v;
   ensures !res ==> (forall i: int :: 0 <= i && i < tableLen ==> state(vis)[i] != v);
 {
-  var invoc: Invoc;
-  var old_lin, old_vis: SeqInvoc;
+  var old_vis: SeqInvoc;
   var k, tv: int;
 
   vis := lin;  // Need to show forall j in hb :: j.vis subsetof vis
@@ -157,9 +148,9 @@ procedure contains(v: int) returns (res: bool, vis: SeqInvoc, witness_k: int)
 
     old_vis := vis;
     vis := union(vis, restr(lin, k));
-    call lemma_union_restr(old_vis, vis, lin, k);
     // tv == table[k] == state(lin)[k] == state(restr(lin, k))[k]
     // == state(restr(vis, k))[k] == state(vis)[k]
+    assert state(restr(lin, k))[k] == state(restr(vis, k))[k];
     assert tv == state(vis)[k];
     // also, restr(lin, k) subseq lin ==> vis subseq lin
     assert subseq(union(old_vis, restr(lin, k)), union(old_vis, lin));
@@ -168,11 +159,8 @@ procedure contains(v: int) returns (res: bool, vis: SeqInvoc, witness_k: int)
 
     if (tv == v) {
       assert state(vis)[k] == v;
-      invoc := createInvoc(2, k, v);
-      old_lin := lin;
-      old_vis := vis;
-      lin := append(lin, invoc);
-      vis := append(vis, invoc);
+      lin := append(lin, createInvoc(2, k, v));
+      vis := append(vis, createInvoc(2, k, v));
       witness_k := k;
 
       res := true;
@@ -181,11 +169,8 @@ procedure contains(v: int) returns (res: bool, vis: SeqInvoc, witness_k: int)
     // else tv != table[k] == state(lin)[k] == state(restr(lin, k))[k] == state(restr(vis, k))[k] == state(vis)[k]
     k := k + 1;
   }
-  invoc := createInvoc(2, k, v);
-  old_lin := lin;
-  old_vis := vis;
-  lin := append(lin, invoc);
-  vis := append(vis, invoc);
+  lin := append(lin, createInvoc(2, k, v));
+  vis := append(vis, createInvoc(2, k, v));
 
   res := false;
   return;
