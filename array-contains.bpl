@@ -24,7 +24,10 @@ axiom (forall s, t, u: SeqInvoc :: subseq(s, t) && subseq(t, u) ==> subseq(s, u)
 function append(s: SeqInvoc, o: Invoc) returns (t: SeqInvoc);
 
 // append preserves subseq
-axiom (forall s, t: SeqInvoc, o: Invoc :: subseq(s, t) ==> subseq(append(s, o), append(t, o)));
+axiom (forall s, t: SeqInvoc, o: Invoc :: subseq(s, t) ==>
+        subseq(append(s, o), append(t, o)));
+axiom (forall s, t: SeqInvoc, o: Invoc :: subseq(s, t) ==>
+        subseq(s, append(t, o)));
 
 
 function union(s1: SeqInvoc, s2: SeqInvoc) returns (t: SeqInvoc);
@@ -56,7 +59,8 @@ function state(s: SeqInvoc) returns (m: [int]int);
 axiom (forall s: SeqInvoc, k: int :: state(s)[k] == state(restr(s, k))[k]);
 
 // Adding invocations of a key k does not affect state of keys k1 != k
-axiom (forall s, t: SeqInvoc, k, k1: int :: k != k1 ==> state(union(s, restr(t, k)))[k1] == state(s)[k1]);
+axiom (forall s, t: SeqInvoc, k, k1: int :: k != k1 ==>
+        state(union(s, restr(t, k)))[k1] == state(s)[k1]);
 
 // The effect of appending an invocation on key k on state of other keys
 axiom (forall s1, s2: SeqInvoc, o: Invoc, m, k, v: int ::
@@ -106,7 +110,6 @@ procedure {:atomic} {:layer 1} writeTable_spec(k, v: int)
   table[k] := v;
   lin := append(lin, createInvoc(0, k, v));
 }
-
 procedure {:yields} {:layer 0} {:refines "writeTable_spec"} writeTable(k, v: int);
 
 procedure {:atomic} {:layer 1} readTable_spec(k: int) returns (v: int)
@@ -115,9 +118,33 @@ procedure {:atomic} {:layer 1} readTable_spec(k: int) returns (v: int)
   v := table[k];
   lin := append(lin, createInvoc(1, k, v));
 }
-
 procedure {:yields} {:layer 0} {:refines "readTable_spec"} readTable(k: int)
   returns (v: int);
+
+procedure {:atomic} {:layer 1} copy_lin_spec() returns (s: SeqInvoc)
+{
+  s := lin;
+}
+procedure {:yields} {:layer 0} {:refines "copy_lin_spec"} copy_lin()
+  returns (s: SeqInvoc);
+
+procedure {:atomic} {:layer 1} readTable1_spec(k: int, vis: SeqInvoc)
+  returns (v: int, old_vis, new_vis: SeqInvoc)
+{
+  v := table[k];
+  old_vis := vis;
+  new_vis := union(vis, restr(lin, k));
+}
+procedure {:yields} {:layer 0} {:refines "readTable1_spec"}
+  readTable1(k: int, vis: SeqInvoc) returns (v: int, old_vis, new_vis: SeqInvoc);
+
+procedure {:atomic} {:layer 1} linearizeC_spec(k, v: int)
+  modifies lin;
+{
+  lin := append(lin, createInvoc(2, k, v));
+}
+procedure {:yields} {:layer 0} {:refines "linearizeC_spec"}
+  linearizeC(k, v: int);
 
 
 // ---------- Procedures/methods
@@ -148,7 +175,85 @@ procedure {:atomic} {:layer 2} get_spec(k: int) returns (v: int)
   lin := append(lin, createInvoc(1, k, v));
 }
 
-procedure {:yields} {:layer 1} {:refines "get_spec"}  get(k, v: int)
+procedure {:yields} {:layer 1} {:refines "get_spec"} get(k: int) returns (v: int)
   requires {:layer 1} tableInv(table, lin);
   ensures {:layer 1} tableInv(table, lin);
 {
+  yield;
+  assert {:layer 1} tableInv(table, lin);
+  call v := readTable(k);
+  yield;
+  assert {:layer 1} tableInv(table, lin);
+}
+
+
+procedure {:atomic} {:layer 2} contains_spec(v: int)
+  returns (res: bool, vis: SeqInvoc, witness_k: int)
+  modifies lin;
+{
+  lin := append(lin, createInvoc(2, witness_k, v));
+  assume subseq(vis, lin);
+  assume res ==> state(vis)[witness_k] == v;
+  assume !res ==> (forall i: int :: 0 <= i && i < tableLen ==> state(vis)[i] != v);
+}
+
+procedure {:yields} {:layer 1} {:refines "contains_spec"} contains(v: int)
+  returns (res: bool, vis: SeqInvoc, witness_k: int)
+  requires {:layer 1} tableInv(table, lin);
+  ensures {:layer 1} tableInv(table, lin);
+{
+  var k, tv: int;
+  var old_vis: SeqInvoc;
+
+  yield; assert {:layer 1} tableInv(table, lin);
+  call vis := copy_lin();
+
+  yield; assert {:layer 1} subseq(vis, lin) && tableInv(table, lin);
+  k := 0;
+  while (k < tableLen)
+    invariant {:layer 1} 0 <= k && k <= tableLen;
+    invariant {:layer 1} subseq(vis, lin);
+    invariant {:layer 1} (forall i: int :: 0 <= i && i < k ==> state(vis)[i] != v);
+    invariant {:layer 1} tableInv(table, lin);
+  {
+    // Read table[k] and add restr(lin, k) to vis
+    call tv, old_vis, vis := readTable1(k, vis);
+
+    // tv == table[k] == state(lin)[k] == state(restr(lin, k))[k]
+    // == state(restr(vis, k))[k] == state(vis)[k]
+    assert {:layer 1} state(restr(lin, k))[k] == state(restr(vis, k))[k];
+    assert {:layer 1} tv == state(vis)[k];
+    // also, restr(lin, k) subseq lin ==> vis subseq lin
+    assert {:layer 1} subseq(union(old_vis, restr(lin, k)), union(old_vis, lin));
+    assert {:layer 1} subseq(union(old_vis, lin), union(lin, lin));
+    assert {:layer 1} subseq(vis, lin);
+
+    yield; assert {:layer 1} subseq(vis, lin) && tableInv(table, lin);
+
+    if (tv == v) {
+      // Linearization point
+      vis := append(vis, createInvoc(2, k, v));
+      witness_k := k;
+      call linearizeC(k, v);
+
+      res := true;
+
+      yield; assert {:layer 1} subseq(vis, lin) && tableInv(table, lin);
+      return;
+    }
+    yield; assert {:layer 1} subseq(vis, lin) && tableInv(table, lin);
+
+    k := k + 1;
+  }
+  yield; assert {:layer 1} subseq(vis, lin) && tableInv(table, lin);
+
+  // Linearization point
+  vis := append(vis, createInvoc(2, k, v));
+  witness_k := k;
+  call linearizeC(k, v);
+
+  res := false;
+
+  yield; assert {:layer 1} tableInv(table, lin);
+  return;
+}
