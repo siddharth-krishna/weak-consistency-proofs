@@ -1,7 +1,7 @@
 // A simplified hash table implementation with weakly consistent contains method
 
 
-// ---------- Encoding of weak visibility
+// ---------- Types and axiomatization of sequences of invocations
 
 type Invoc;
 
@@ -53,7 +53,7 @@ axiom (forall s: SeqInvoc, k: int :: subseq(restr(s, k), s));
 function state(s: SeqInvoc) returns (m: [int]int);
 
 
-// ---------- Some lemmas that we need
+// ---------- Some lemmas of this ADT that we need
 
 // The mapping of key k depends only invocations involving k
 axiom (forall s: SeqInvoc, k: int :: state(s)[k] == state(restr(s, k))[k]);
@@ -101,9 +101,6 @@ function {:inline} tableInv(table: [int]int, lin: SeqInvoc) : bool
 
 // ---------- Primitives/helpers for modifying global state
 
-// These are essentially the same as get/put because I don't know how to enforce
-// that the write/read of the table and the append to lin happen at the same time
-
 procedure {:atomic} {:layer 1} writeTable_spec(k, v: int)
   modifies table, lin;
 {
@@ -147,7 +144,7 @@ procedure {:yields} {:layer 0} {:refines "linearizeC_spec"}
   linearizeC(k, v: int);
 
 
-// ---------- Procedures/methods
+// ---------- The ADT methods
 
 procedure {:atomic} {:layer 2} put_spec(k: int, v: int)
   modifies table, lin;
@@ -160,11 +157,11 @@ procedure {:yields} {:layer 1} {:refines "put_spec"}  put(k, v: int)
   requires {:layer 1} tableInv(table, lin);
   ensures {:layer 1} tableInv(table, lin);
 {
-  yield;
-  assert {:layer 1} tableInv(table, lin);
+  yield; assert {:layer 1} tableInv(table, lin);
+
   call writeTable(k, v);
-  yield;
-  assert {:layer 1} tableInv(table, lin);
+
+  yield; assert {:layer 1} tableInv(table, lin);
 }
 
 
@@ -179,11 +176,11 @@ procedure {:yields} {:layer 1} {:refines "get_spec"} get(k: int) returns (v: int
   requires {:layer 1} tableInv(table, lin);
   ensures {:layer 1} tableInv(table, lin);
 {
-  yield;
-  assert {:layer 1} tableInv(table, lin);
+  yield; assert {:layer 1} tableInv(table, lin);
+
   call v := readTable(k);
-  yield;
-  assert {:layer 1} tableInv(table, lin);
+
+  yield; assert {:layer 1} tableInv(table, lin);
 }
 
 
