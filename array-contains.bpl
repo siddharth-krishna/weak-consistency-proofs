@@ -183,6 +183,12 @@ procedure {:yields} {:layer 1} {:refines "get_spec"} get(k: int) returns (v: int
   yield; assert {:layer 1} tableInv(table, lin);
 }
 
+function contains_func_spec(s: SeqInvoc, witness_k: int, v: int, res: bool)
+  : bool
+{
+   (res ==> state(s)[witness_k] == v)
+   && (!res ==> (forall i: int :: 0 <= i && i < tableLen ==> state(s)[i] != v))
+}
 
 procedure {:atomic} {:layer 2} contains_spec(v: int)
   returns (res: bool, vis: SeqInvoc, witness_k: int)
@@ -190,8 +196,7 @@ procedure {:atomic} {:layer 2} contains_spec(v: int)
 {
   lin := append(lin, createInvoc(2, witness_k, v));
   assume subseq(vis, lin);
-  assume res ==> state(vis)[witness_k] == v;
-  assume !res ==> (forall i: int :: 0 <= i && i < tableLen ==> state(vis)[i] != v);
+  assume contains_func_spec(vis, witness_k, v, res);
 }
 
 procedure {:yields} {:layer 1} {:refines "contains_spec"} contains(v: int)
