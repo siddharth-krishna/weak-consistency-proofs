@@ -1,0 +1,47 @@
+{
+  "class": "simpleConcurrent.ConcurrentArray",
+  "harnessParameters": {
+        "invocations": 3
+  },
+  "methods": [
+    {
+      "name": "get",
+      "parameters": [
+        {"type": "int"}
+      ],
+      "void": false,
+      "readonly": true,
+      "trusted": true,
+      "visibility": "complete"
+    },
+    {
+      "name": "put",
+      "parameters": [
+        {"type": "int"},
+        {"type": "java.lang.Object"}
+      ],
+      "void": true,
+      "readonly": false,
+      "trusted": true,
+      "visibility": "complete"
+    },
+    {
+      "name": "contains",
+      "parameters": [
+        {"type": "java.lang.Object"}
+      ],
+      "void": false,
+      "readonly": true,
+      "trusted": true,
+      "visibility": "monotonic"
+    },
+    {
+      "name": "size",
+      "parameters": [],
+      "void": false,
+      "readonly": true,
+      "trusted": true,
+      "visibility": "weak"
+    }
+  ]
+}
