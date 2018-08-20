@@ -26,6 +26,16 @@
       "visibility": "complete"
     },
     {
+      "name": "remove",
+      "parameters": [
+        {"type": "int"}
+      ],
+      "void": false,
+      "readonly": false,
+      "trusted": true,
+      "visibility": "complete"
+    },
+    {
       "name": "contains",
       "parameters": [
         {"type": "java.lang.Object"}
@@ -36,7 +46,7 @@
       "visibility": "monotonic"
     },
     {
-      "name": "size",
+      "name": "isEmpty",
       "parameters": [],
       "void": false,
       "readonly": true,

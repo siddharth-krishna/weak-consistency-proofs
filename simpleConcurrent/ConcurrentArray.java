@@ -17,14 +17,24 @@ public class ConcurrentArray<V> {
         if (key < 0 || key >= table.length())
             throw new IndexOutOfBoundsException();
         if (value == null) throw new NullPointerException();
-        table.set(key, value);
-        count.incrementAndGet();
+        V oldValue = table.getAndSet(key, value);
+        if (oldValue == null)
+            count.incrementAndGet();
     }
 
     public V get(int key) {
         if (key < 0 || key >= table.length())
             throw new IndexOutOfBoundsException();
         return table.get(key);
+    }
+
+    public V remove(int key) {
+        if (key < 0 || key >= table.length())
+            throw new IndexOutOfBoundsException();
+        V value = table.getAndSet(key, null);
+        if (value != null)
+            count.decrementAndGet();
+        return value;
     }
 
     public boolean contains(V value) {
@@ -41,6 +51,20 @@ public class ConcurrentArray<V> {
 
     public int size() {
         return count.get();
+    }
+/*
+    {
+      "name": "size",
+      "parameters": [],
+      "void": false,
+      "readonly": true,
+      "trusted": true,
+      "visibility": "none"
+    },
+*/
+
+    public boolean isEmpty() {
+        return count.get() <= 0;
     }
 }
 
