@@ -1,0 +1,21 @@
+{
+  "class": "simpleConcurrent.ArrayCounter",
+  "methods": [
+    {
+      "name": "get",
+      "parameters": [],
+      "void": false,
+      "readonly": true,
+      "trusted": true,
+      "visibility": "complete"
+    },
+    {
+      "name": "incr",
+      "parameters": [],
+      "void": true,
+      "readonly": false,
+      "trusted": true,
+      "visibility": "complete"
+    }
+  ]
+}
