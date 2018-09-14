@@ -29,7 +29,7 @@ axiom (forall s, t: SeqInvoc, o: Invoc :: subset(s, t) ==>
 */
 
 
-// Sets of invocations -- TODO Z3 support?
+// Sets of invocations -- TODO Z3 supports sets?
 type SetInvoc;
 const emptySet: SetInvoc;
 
@@ -153,13 +153,6 @@ axiom (forall s1, s2: SetInvoc, q1, q2: SeqInvoc, n: Invoc, m: Method, k, k1, v:
         n == invoc(m, k, v) && q2 == append(q1, n) && s2 == add(s1, n) ==>
           ((m == get || m == contains) ==> state(s2, q2)[k1] == state(s1, q1)[k1])
 );
-// TODO why doesn't this follow from the above?
-axiom (forall t1, t2: [int]SetInvoc, q1, q2: SeqInvoc, n: Invoc, i, j, k, k1, v: int ::
-        n == invoc(contains, k, v) && q2 == append(q1, n)
-        && t2 == addRange(t1, n, i, j) ==>
-          state(t2[k1], q2)[k1] == state(t1[k1], q1)[k1]
-);
-
 
 // The effect of appending an invocation on key k on state with unchanged vis
 axiom (forall s: SetInvoc, q1: SeqInvoc, n: Invoc, m: Method, k, k1, v: int ::
@@ -179,13 +172,6 @@ axiom (forall s0, s1, t: SetInvoc, k: int ::
         s1 == union(s0, t) && subset(restr(s0, k), t) ==>
           restr(s1, k) == restr(t, k)
 );
-
-/*
-// Adding invocations of a key k does not affect state of keys k1 != k
-axiom (forall s, t: SeqInvoc, k, k1: int :: k != k1 ==>
-        state(union(s, restr(t, k)))[k1] == state(s)[k1]);
-
-*/
 
 
 // ---------- Representation of execution and linearization
@@ -261,7 +247,7 @@ procedure {:atomic} {:layer 1} writeTable_spec(k, v: int, n: Invoc)
 
   tabvis[k] := add(tabvis[k], n);
   assume my_vis == unionRange(tabvis, 0, tabLen);
-  //  assume (forall n1: Invoc, m: Method, k1, v1: int ::  // TODO get rid of
+  //  assume (forall n1: Invoc, m: Method, k1, v1: int ::  // TODO union preserves properties
   //          elem(n1, my_vis) && n1 == invoc(m, k1, v1) ==> 0 <= k1 && k1 < tabLen);
 
   vis[n] := my_vis;
@@ -279,7 +265,7 @@ procedure {:atomic} {:layer 1} readTable_spec(k: int, n: Invoc)
 
   tabvis[k] := add(tabvis[k], n);
   assume my_vis == unionRange(tabvis, 0, tabLen);
-  //  assume (forall n1: Invoc, m: Method, k1, v1: int ::  // TODO prove
+  //  assume (forall n1: Invoc, m: Method, k1, v1: int ::  // TODO union preserves properties
   //          elem(n1, my_vis) && n1 == invoc(m, k1, v1) ==> 0 <= k1 && k1 < tabLen);
   vis[n] := my_vis;
   lin := append(lin, n);
@@ -296,7 +282,9 @@ procedure {:atomic} {:layer 1} readTable1_spec(k: int, my_vis: SetInvoc)
 
   old_vis := my_vis;
   new_vis := union(my_vis, tabvis[k]);
-  // TODO prove this
+  // TODO true because tabvis[k] only affects state of k
+  // Problem: how to say (t affects only k) ==> state(union(s, t))[i != k] == state(s)[i]
+  // without quantifier alternation?
   assume (forall i: int :: 0 <= i && i < k ==> state(new_vis, lin)[i] == state(old_vis, lin)[i]);
 }
 procedure {:yields} {:layer 0} {:refines "readTable1_spec"}
@@ -504,6 +492,7 @@ procedure {:yields} {:layer 1} {:refines "contains_spec"} contains(v: int)
 
       res := true;
 
+      // TODO add triggers to get rid of these:
       assert {:layer 1} (forall i: int :: 0 <= i && i < tabLen ==>
                            state(tabvis[i], lin)[i] == abs[i]);
       assert {:layer 1} (forall i: int :: k < i && i < tabLen ==>
