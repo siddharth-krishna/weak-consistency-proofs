@@ -177,8 +177,7 @@ axiom (forall s0, s1, t: SetInvoc, k: int ::
 // ---------- Representation of execution and linearization
 
 // A shared global variable that builds the linearization
-// For now exists on all layers so that we can assume stuff about it
-var {:layer 0,2} lin: SeqInvoc;
+var {:layer 1,2} lin: SeqInvoc;
 
 // hb(x, y) : x happens-before y.
 // We assume there exists such a function, given by the client program
@@ -240,7 +239,7 @@ function {:inline} tableInv(table: [int]int, abs: AbsState, tabvis: [int]SetInvo
 // Write to the table and returns the union of tabvis as the visibility
 procedure {:atomic} {:layer 1} writeTable_spec(k, v: int, n: Invoc)
   returns (my_vis: SetInvoc, old_tabvis: [int]SetInvoc)
-  modifies table, vis, tabvis, lin;
+  modifies table, vis, tabvis;
 {
   old_tabvis := tabvis;
   table[k] := v;
@@ -251,7 +250,6 @@ procedure {:atomic} {:layer 1} writeTable_spec(k, v: int, n: Invoc)
   //          elem(n1, my_vis) && n1 == invoc(m, k1, v1) ==> 0 <= k1 && k1 < tabLen);
 
   vis[n] := my_vis;
-  lin := append(lin, n);
 }
 procedure {:yields} {:layer 0} {:refines "writeTable_spec"}
   writeTable(k, v: int, n: Invoc) returns (my_vis: SetInvoc, old_tabvis: [int]SetInvoc);
@@ -259,7 +257,7 @@ procedure {:yields} {:layer 0} {:refines "writeTable_spec"}
 // Read from the table and returns the union of tabvis as the visibility
 procedure {:atomic} {:layer 1} readTable_spec(k: int, n: Invoc)
   returns (v: int, my_vis: SetInvoc)
-  modifies vis, tabvis, lin;
+  modifies vis, tabvis;
 {
   v := table[k];
 
@@ -268,7 +266,6 @@ procedure {:atomic} {:layer 1} readTable_spec(k: int, n: Invoc)
   //  assume (forall n1: Invoc, m: Method, k1, v1: int ::  // TODO union preserves properties
   //          elem(n1, my_vis) && n1 == invoc(m, k1, v1) ==> 0 <= k1 && k1 < tabLen);
   vis[n] := my_vis;
-  lin := append(lin, n);
 }
 procedure {:yields} {:layer 0} {:refines "readTable_spec"} readTable(k: int, n: Invoc)
   returns (v: int, my_vis: SetInvoc);
@@ -282,10 +279,6 @@ procedure {:atomic} {:layer 1} readTable1_spec(k: int, my_vis: SetInvoc)
 
   old_vis := my_vis;
   new_vis := union(my_vis, tabvis[k]);
-  // TODO true because tabvis[k] only affects state of k
-  // Problem: how to say (t affects only k) ==> state(union(s, t))[i != k] == state(s)[i]
-  // without quantifier alternation?
-  assume (forall i: int :: 0 <= i && i < k ==> state(new_vis, lin)[i] == state(old_vis, lin)[i]);
 }
 procedure {:yields} {:layer 0} {:refines "readTable1_spec"}
   readTable1(k: int, my_vis: SetInvoc) returns (v: int, old_vis, new_vis: SetInvoc);
@@ -293,22 +286,19 @@ procedure {:yields} {:layer 0} {:refines "readTable1_spec"}
 
 // Write my_vis to vis, and also add my label n to all of tabvis[]  -- TODO rename
 procedure {:atomic} {:layer 1} addVis_spec(n: Invoc, my_vis: SetInvoc, i: int)
-  returns (old_tabvis: [int]SetInvoc, old_lin: SeqInvoc)
-  modifies vis, tabvis, lin;
+  returns (old_tabvis: [int]SetInvoc)
+  modifies vis, tabvis;
 {
   old_tabvis := tabvis;
   vis[n] := my_vis;
   tabvis := addRange(tabvis, n, 0, i+1);
-  old_lin := lin;
-  lin := append(lin, n);
 }
 procedure {:yields} {:layer 0} {:refines "addVis_spec"}
-addVis(n: Invoc, my_vis: SetInvoc, i: int)  returns (old_tabvis: [int]SetInvoc, old_lin: SeqInvoc);
+addVis(n: Invoc, my_vis: SetInvoc, i: int)  returns (old_tabvis: [int]SetInvoc);
 
 
 // Introduction actions:
 
-/* For now, lin exists on all layers to allow talking about it in assume statements
 procedure {:layer 1} {:inline 1} intro_writeLin1(n: Invoc) returns (old_lin: SeqInvoc)
   modifies lin;
 {
@@ -321,7 +311,6 @@ procedure {:layer 1} {:inline 1} intro_writeLin(n: Invoc)
 {
   lin := append(lin, n);
 }
- */
 
 procedure {:layer 1} {:inline 1} intro_writeAbs(k: int, v: int)
   modifies abs;
@@ -345,6 +334,15 @@ procedure {:atomic} {:layer 1} spec_return_spec(n: Invoc)
 }
 procedure {:yields} {:layer 0} {:refines "spec_return_spec"}  spec_return(n: Invoc);
 
+
+// ---------- Introduction actions used to encode assume statements -- prove these
+
+// TODO true because tabvis[k] only affects state of k
+// Problem: how to say (t affects only k) ==> state(union(s, t))[i != k] == state(s)[i]
+// without quantifier alternation?
+procedure {:layer 1} lemma_state_unchanged(k: int, old_vis, new_vis: SetInvoc);
+  requires new_vis == union(old_vis, tabvis[k]) && 0 <= k && k < tabLen;
+  ensures (forall i: int :: 0 <= i && i < k ==> state(new_vis, lin)[i] == state(old_vis, lin)[i]);
 
 // ---------- The ADT methods
 
@@ -378,6 +376,7 @@ procedure {:yields} {:layer 1} {:refines "put_spec"} put(k, v: int)
   call my_vis, old_tabvis := writeTable(k, v, this);
 
   call intro_writeAbs(k, v);
+  call intro_writeLin(this);
 
   yield; assert {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen);
   call spec_return(this);
@@ -411,6 +410,8 @@ procedure {:yields} {:layer 1} {:refines "get_spec"} get(k: int)
   yield; assert {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen);
 
   call v, my_vis := readTable(k, this);
+
+  call intro_writeLin(this);
 
   yield; assert {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen);
   call spec_return(this);
@@ -470,6 +471,7 @@ procedure {:yields} {:layer 1} {:refines "contains_spec"} contains(v: int)
   {
     // Read table[k] and add tabvis[k] to my_vis
     call tv, old_vis, my_vis := readTable1(k, my_vis);
+    call lemma_state_unchanged(k, old_vis, my_vis);
 
     // tv == table[k] == abs[k] == state(tabvis[k], lin)[k]
     // old_vis < setOfSeq(lin) ==> restr(old_vis, k) < restr(setOfSeq(lin), k)
@@ -488,7 +490,8 @@ procedure {:yields} {:layer 1} {:refines "contains_spec"} contains(v: int)
       this := invoc(contains, k, v);
       my_vis := add(my_vis, this);
       witness_k := k;
-      call old_tabvis, old_lin := addVis(this, my_vis, k);
+      call old_tabvis := addVis(this, my_vis, k);
+      call old_lin := intro_writeLin1(this);
 
       res := true;
 
@@ -522,7 +525,8 @@ procedure {:yields} {:layer 1} {:refines "contains_spec"} contains(v: int)
   old_vis := my_vis;
   my_vis := add(my_vis, this);
   witness_k := k;
-  call old_tabvis, old_lin := addVis(this, my_vis, k-1);
+  call old_tabvis := addVis(this, my_vis, k-1);
+  call old_lin := intro_writeLin1(this);
 
   res := false;
 
