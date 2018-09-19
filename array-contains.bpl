@@ -62,6 +62,9 @@ axiom (forall s, t1, t2: SetInvoc :: subset(t1, t2) ==> subset(union(s, t1), uni
 
 axiom (forall s, t1, t2: SetInvoc :: subset(t1, s) && subset(t2, s) ==> subset(union(t1, t2), s));
 
+// relation between union and elem
+axiom (forall n: Invoc, s, s1, t: SetInvoc :: elem(n, s) && s1 == union(s, t) ==> elem(n, s1));
+
 // Calculate the union m[i] \cup ... \cup m[j-1]
 function unionRange(m: [int]SetInvoc, i: int, j: int) returns (s: SetInvoc);
 
@@ -79,6 +82,7 @@ function add(s: SetInvoc, n: Invoc) returns (t: SetInvoc);
 // Relation between add and elem
 axiom (forall s: SetInvoc, n1, n2: Invoc :: elem(n1, add(s, n2))
        ==> n1 == n2 || elem(n1, s));
+axiom (forall s: SetInvoc, n1, n2: Invoc :: elem(n1, s) ==> elem(n1, add(s, n2)));
 
 // Relation between union and elem
 axiom (forall s, t: SetInvoc, n1: Invoc :: elem(n1, union(s, t))
@@ -182,6 +186,7 @@ var {:layer 1,2} lin: SeqInvoc;
 // hb(x, y) : x happens-before y.
 // We assume there exists such a function, given by the client program
 function hb(x: Invoc, y: Invoc) : bool;
+axiom (forall n: Invoc :: !hb(n, n));
 
 // The set of invocations that have been called
 var {:layer 0,1} called: [Invoc]bool;
@@ -215,7 +220,8 @@ function {:inline} abstracts(conc: [int]int, abs: AbsState) : bool
 
 // The invariants
 function {:inline} tableInv(table: [int]int, abs: AbsState, tabvis: [int]SetInvoc,
-                            lin: SeqInvoc, vis: [Invoc]SetInvoc, tabLen: int) : bool
+                            lin: SeqInvoc, vis: [Invoc]SetInvoc, tabLen: int,
+                            called: [Invoc]bool, returned: [Invoc]bool) : bool
 {
   abstracts(table, abs)
   && unionRange(tabvis, 0, tabLen) == setOfSeq(lin)
@@ -224,17 +230,22 @@ function {:inline} tableInv(table: [int]int, abs: AbsState, tabvis: [int]SetInvo
       state(tabvis[i], lin)[i] == state(restr(setOfSeq(lin), i), lin)[i])
   && (forall i: int :: 0 <= i && i < tabLen ==> subset(restr(setOfSeq(lin), i), tabvis[i]))
   && (forall i: int :: 0 <= i && i < tabLen ==> subset(tabvis[i], setOfSeq(lin)))
-  /* These loop invs needed to show monotonicity
-  && (forall n1, n2: Invoc, m: Method, k1, v1: int ::
-     elem(n1, vis[n2]) && n1 == invoc(m, k1, v1) ==> 0 <= k1 && k1 < tabLen)
-  && (forall n1, n2: Invoc, m: Method, i, k1, v1: int :: 0 <= i && i < tabLen
-     && elem(n1, tabvis[i]) && n1 == invoc(m, k1, v1) ==> 0 <= k1 && k1 < tabLen)
-   */
+  // Invariants needed to show monotonicity
+  && (forall n1, n2 : Invoc :: called[n1] && hb(n2, n1) ==> returned[n2])
+  && (forall n1, n2 : Invoc, m: Method, k1, v1: int ::
+    returned[n1] && elem(n2, vis[n1]) && n2 == invoc(m, k1, v1) ==> elem(n2, tabvis[k1]))
   // TODO The linearization is consistent with happens-before
 }
 
+function {:inline} thisInv(called: [Invoc]bool, returned: [Invoc]bool, this: Invoc) : bool
+{
+  called[this] && !returned[this]
+}
 
 // ---------- Primitives/helpers for modifying global state
+
+// TODO use Bernhard's suggestion to update ghost state at linearization points without
+// putting it in the same atomic procedure as write/read
 
 // Write to the table and returns the union of tabvis as the visibility
 procedure {:atomic} {:layer 1} writeTable_spec(k, v: int, n: Invoc)
@@ -246,8 +257,8 @@ procedure {:atomic} {:layer 1} writeTable_spec(k, v: int, n: Invoc)
 
   tabvis[k] := add(tabvis[k], n);
   assume my_vis == unionRange(tabvis, 0, tabLen);
-  //  assume (forall n1: Invoc, m: Method, k1, v1: int ::  // TODO union preserves properties
-  //          elem(n1, my_vis) && n1 == invoc(m, k1, v1) ==> 0 <= k1 && k1 < tabLen);
+  assume (forall n1: Invoc, m: Method, k1, v1: int ::  // TODO show this
+    elem(n1, my_vis) && n1 == invoc(m, k1, v1) ==> elem(n1, tabvis[k1]));
 
   vis[n] := my_vis;
 }
@@ -263,8 +274,8 @@ procedure {:atomic} {:layer 1} readTable_spec(k: int, n: Invoc)
 
   tabvis[k] := add(tabvis[k], n);
   assume my_vis == unionRange(tabvis, 0, tabLen);
-  //  assume (forall n1: Invoc, m: Method, k1, v1: int ::  // TODO union preserves properties
-  //          elem(n1, my_vis) && n1 == invoc(m, k1, v1) ==> 0 <= k1 && k1 < tabLen);
+  assume (forall n1: Invoc, m: Method, k1, v1: int ::  // TODO show this
+    elem(n1, my_vis) && n1 == invoc(m, k1, v1) ==> elem(n1, tabvis[k1]));
   vis[n] := my_vis;
 }
 procedure {:yields} {:layer 0} {:refines "readTable_spec"} readTable(k: int, n: Invoc)
@@ -320,12 +331,18 @@ procedure {:layer 1} {:inline 1} intro_writeAbs(k: int, v: int)
 
 // Special call and return actions
 
-procedure {:atomic} {:layer 1} spec_call_spec(n: Invoc)
-  modifies called;
+// TODO need to use linear types to ensure that no thread can call spec_return on somone else's invoc!!
+
+procedure {:atomic} {:layer 1} spec_call_spec(m: Method, k, v: int) returns (n: Invoc)
+  modifies called, returned;
 {
+  n := invoc(m, k, v);
+  assume (forall n1: Invoc :: hb(n1, n) ==> returned[n1]);  // everything before n has returned
+  assume (forall n1: Invoc :: hb(n, n1) ==> !called[n1]);  // everything after n has not been called
+  assume (!called[n] && !returned[n]);  // n has not been called or returned yet
   called[n] := true;
 }
-procedure {:yields} {:layer 0} {:refines "spec_call_spec"} spec_call(n: Invoc);
+procedure {:yields} {:layer 0} {:refines "spec_call_spec"} spec_call(m: Method, k, v: int) returns (n: Invoc);
 
 procedure {:atomic} {:layer 1} spec_return_spec(n: Invoc)
   modifies returned;
@@ -333,6 +350,9 @@ procedure {:atomic} {:layer 1} spec_return_spec(n: Invoc)
   returned[n] := true;
 }
 procedure {:yields} {:layer 0} {:refines "spec_return_spec"}  spec_return(n: Invoc);
+
+procedure {:layer 1} createInvoc(m: Method, k, v: int) returns (n: Invoc);
+
 
 
 // ---------- Introduction actions used to encode assume statements -- prove these
@@ -363,24 +383,26 @@ procedure {:atomic} {:layer 2} put_spec(k: int, v: int)
 
 procedure {:yields} {:layer 1} {:refines "put_spec"} put(k, v: int)
   returns (my_vis: SetInvoc)
-  requires {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen);
+  requires {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen, called, returned);
   requires {:layer 1} 0 <= k && k < tabLen;
-  ensures {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen);
+  ensures {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen, called, returned);
 {
   var this: Invoc; var old_tabvis: [int]SetInvoc;
-  this := invoc(put, k, v);
-  yield; assert {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen);
-  call spec_call(this);
-  yield; assert {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen);
+  yield; assert {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen, called, returned);
+  call this := spec_call(put, k, v);
+  yield; assert {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen, called, returned) && thisInv(called, returned, this);
 
   call my_vis, old_tabvis := writeTable(k, v, this);
 
   call intro_writeAbs(k, v);
   call intro_writeLin(this);
 
-  yield; assert {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen);
+  yield; assert {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen, called, returned)
+    && thisInv(called, returned, this)
+    && (forall n1, n2 : Invoc, m: Method, k1, v1: int ::
+    (returned[n1] || n1 == this) && elem(n2, vis[n1]) && n2 == invoc(m, k1, v1) ==> elem(n2, tabvis[k1]));
   call spec_return(this);
-  yield; assert {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen);
+  yield; assert {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen, called, returned);
 }
 
 procedure {:atomic} {:layer 2} get_spec(k: int) returns (v: int, my_vis: SetInvoc)
@@ -399,26 +421,94 @@ procedure {:atomic} {:layer 2} get_spec(k: int) returns (v: int, my_vis: SetInvo
 
 procedure {:yields} {:layer 1} {:refines "get_spec"} get(k: int)
   returns (v: int, my_vis: SetInvoc)
-  requires {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen);
+  requires {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen, called, returned);
   requires {:layer 1} 0 <= k && k < tabLen;
-  ensures {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen);
+  ensures {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen, called, returned);
 {
   var this: Invoc;
-  this := invoc(get, k, v);
-  yield; assert {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen);
-  call spec_call(this);
-  yield; assert {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen);
+  yield; assert {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen, called, returned);
+  call this := spec_call(get, k, v);
+  yield; assert {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen, called, returned) && thisInv(called, returned, this);
 
   call v, my_vis := readTable(k, this);
 
   call intro_writeLin(this);
 
-  yield; assert {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen);
+  yield; assert {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen, called, returned)
+    && thisInv(called, returned, this)
+    && (forall n1, n2 : Invoc, m: Method, k1, v1: int ::
+    (returned[n1] || n1 == this) && elem(n2, vis[n1]) && n2 == invoc(m, k1, v1) ==> elem(n2, tabvis[k1]));
   call spec_return(this);
-  yield; assert {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen);
+  yield; assert {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen, called, returned);
+}
+
+procedure {:atomic} {:layer 2} test_spec()
+  returns (my_vis: SetInvoc)
+{
+  var this: Invoc;
+  this := invoc(contains, 0, 0);
+  // test is monotonic
+  assume (forall j: Invoc :: hb(j, this) ==> subset(vis[j], my_vis));
+}
+
+procedure {:layer 1} lemma_false(this: Invoc, k: int, my_vis: SetInvoc);
+  ensures (forall n1, n2: Invoc, m: Method, k1, v1: int ::
+                          hb(n1, this) && elem(n2, vis[n1]) && n2 == invoc(m, k1, v1)
+                          && 0 <= k1 && k1 < k
+           ==> elem(n2, my_vis));
+
+
+procedure {:yields} {:layer 1} {:refines "test_spec"} test()
+  returns (my_vis: SetInvoc)
+  requires {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen, called, returned);
+  ensures {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen, called, returned);
+{
+  var k, tv: int;
+  var this: Invoc;
+  var old_vis: SetInvoc;
+  yield; assert {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen, called, returned);
+  call this := spec_call(contains, 0, 0);
+  yield; assert {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen, called, returned) && thisInv(called, returned, this);
+
+  k := 0;
+
+  while (k < tabLen)
+    invariant {:layer 1} 0 <= k && k <= tabLen;
+    invariant {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen, called, returned) && thisInv(called, returned, this);
+    invariant {:layer 1} (forall n1, n2: Invoc, m: Method, k1, v1: int ::
+                          hb(n1, this) && elem(n2, vis[n1]) && n2 == invoc(m, k1, v1)
+                          && 0 <= k1 && k1 < k
+                          ==> elem(n2, my_vis));
+  {
+    // Read table[k] and add tabvis[k] to my_vis
+    call tv, old_vis, my_vis := readTable1(k, my_vis);
+    k := k + 1;
+    assert {:layer 1} (forall n1, n2: Invoc, m: Method, k1, v1: int ::
+                          hb(n1, this) && elem(n2, vis[n1]) && n2 == invoc(m, k1, v1)
+                          && 0 <= k1 && k1 < k - 1
+                          ==> elem(n2, my_vis));
+
+    assert {:layer 1} (forall n1, n2: Invoc, m: Method, k1, v1: int ::
+                          hb(n1, this) && elem(n2, vis[n1]) && n2 == invoc(m, k1, v1)
+                          && 0 <= k1 && k1 < k
+      ==> returned[n1]);
+    
+    yield; assert {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen, called, returned) && called[this];
+    call lemma_false(this, k, my_vis);  // TODO!!!!!
+  }
+  assert {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen, called, returned) && thisInv(called, returned, this);
+  // To prove this, need some invariant that says all invocs in tabvis have keys in [0, tabLen]
+  assert {:layer 1} (forall n1, n2: Invoc, m: Method, k1, v1: int ::
+                     hb(n1, this) && elem(n2, vis[n1]) && n2 == invoc(m, k1, v1)
+                     ==> elem(n2, my_vis));
+  yield; assert {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen, called, returned);
+
+  return;
 }
 
 
+
+/*
 
 function contains_func_spec(vis: SetInvoc, lin: SeqInvoc, witness_k: int,
                             v: int, res: bool) : bool
@@ -444,20 +534,20 @@ procedure {:atomic} {:layer 2} contains_spec(v: int)
 
 procedure {:yields} {:layer 1} {:refines "contains_spec"} contains(v: int)
   returns (res: bool, my_vis: SetInvoc, witness_k: int)
-  requires {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen);
-  ensures {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen);
+  requires {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen, called, returned);
+  ensures {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen, called, returned);
 {
   var k, tv: int;
   var old_vis: SetInvoc;
   var this: Invoc;
   var old_tabvis: [int]SetInvoc; var {:layer 1} old_lin: SeqInvoc;
 
-  yield; assert {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen);
+  yield; assert {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen, called, returned);
   k := 0;
   my_vis := emptySet;
   while (k < tabLen)
     invariant {:layer 1} 0 <= k && k <= tabLen;
-    invariant {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen);
+    invariant {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen, called, returned);
     invariant {:layer 1} (forall i: int :: 0 <= i && i < k ==> state(my_vis, lin)[i] != v);
     invariant {:layer 1} subset(my_vis, setOfSeq(lin));
     /* These loop invs needed to show monotonicity
@@ -467,7 +557,7 @@ procedure {:yields} {:layer 1} {:refines "contains_spec"} contains(v: int)
                           hb(n1, this) && elem(n2, vis[n1]) && n1 == invoc(m, k1, v1)
                           && 0 <= k1 && k1 < k
                           ==> elem(n2, my_vis));
-     */
+   //end comment/
   {
     // Read table[k] and add tabvis[k] to my_vis
     call tv, old_vis, my_vis := readTable1(k, my_vis);
@@ -481,7 +571,7 @@ procedure {:yields} {:layer 1} {:refines "contains_spec"} contains(v: int)
     assert {:layer 1} state(restr(my_vis, k), lin)[k]
                         == state(restr(tabvis[k], k), lin)[k];
     // == tv
-    yield; assert {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen) && tv == state(my_vis, lin)[k]
+    yield; assert {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen, called, returned) && tv == state(my_vis, lin)[k]
       && (forall i: int :: 0 <= i && i < k ==> state(my_vis, lin)[i] != v)
       && subset(my_vis, setOfSeq(lin));
 
@@ -508,16 +598,16 @@ procedure {:yields} {:layer 1} {:refines "contains_spec"} contains(v: int)
                           && tabvis[k] == add(old_tabvis[k], this));
       assert {:layer 1} (subset(restr(setOfSeq(lin), k), tabvis[k]));
 
-      yield; assert {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen);
+      yield; assert {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen, called, returned);
       return;
     }
-    yield; assert {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen)
+    yield; assert {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen, called, returned)
       && (forall i: int :: 0 <= i && i <= k ==> state(my_vis, lin)[i] != v)
       && subset(my_vis, setOfSeq(lin));
 
     k := k + 1;
   }
-  yield; assert {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen)
+  yield; assert {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen, called, returned)
     && (forall i: int :: 0 <= i && i < tabLen ==> state(my_vis, lin)[i] != v);
 
   // Linearization point
@@ -536,93 +626,10 @@ procedure {:yields} {:layer 1} {:refines "contains_spec"} contains(v: int)
   assert {:layer 1} lin == append(old_lin, this) && my_vis == add(old_vis, this)
     && (forall i: int :: 0 <= i && i < tabLen ==> state(my_vis, lin)[i] == state(old_vis, old_lin)[i]);
 
-  yield; assert {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen);
+  yield; assert {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen, called, returned);
   return;
 }
 
-/*
-
-procedure {:atomic} {:layer 2} test_spec(this: Invoc)
-  returns (my_vis: SetInvoc)
-{
-  assume (forall j: Invoc :: hb(j, this) ==> subset(vis[j], my_vis));
-}
-
-procedure {:yields} {:layer 1} {:refines "test_spec"} test(this: Invoc)
-  returns (my_vis: SetInvoc)
-  requires {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen);
-  ensures {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen);
-{
-  var k, tv: int;
-  var old_vis: SetInvoc;
-  yield; assert {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen);
-
-  k := 0;
-
-  while (k < tabLen)
-    invariant {:layer 1} 0 <= k && k <= tabLen;
-    invariant {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen);
-    invariant {:layer 1} (forall n1, n2: Invoc, m: Method, k1, v1: int ::
-                          hb(n1, this) && elem(n2, vis[n1]) && n2 == invoc(m, k1, v1)
-                          && 0 <= k1 && k1 < k
-                          ==> elem(n2, my_vis));
-  {
-    // Read table[k] and add tabvis[k] to my_vis
-    call tv, old_vis, my_vis := readTable1(k, my_vis);
-    yield; assert {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen);
-  }
-  assert {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen);
-  assert {:layer 1} (forall n1, n2: Invoc, m: Method, k1, v1: int ::
-                     hb(n1, this) && elem(n2, vis[n1]) && n2 == invoc(m, k1, v1)
-                     // TODO to remove last conjunct above, use ADTs!!
-                     ==> elem(n2, my_vis));
-  yield; assert {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen);
-
-  return;
-}
-
-
-
-
-/*
-procedure {:atomic} {:layer 2} test_spec(this: Invoc)
-  returns (my_vis: SetInvoc)
-{
-  assume (forall j: Invoc :: hb(j, this) ==> subset(vis[j], my_vis));
-}
-
-procedure {:yields} {:layer 1} {:refines "test_spec"} test(this: Invoc)
-  returns (my_vis: SetInvoc)
-  requires {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen);
-  ensures {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen);
-{
-  var k, tv: int;
-  var old_vis: SetInvoc;
-  yield; assert {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen);
-
-  k := 0;
-
-  while (k < tabLen)
-    invariant {:layer 1} 0 <= k && k <= tabLen;
-    invariant {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen);
-    invariant {:layer 1} (forall n1, n2: Invoc, m: Method, k1, v1: int ::
-                          hb(n1, this) && elem(n2, vis[n1]) && n2 == invoc(m, k1, v1)
-                          && 0 <= k1 && k1 < k
-                          ==> elem(n2, my_vis));
-  {
-    // Read table[k] and add tabvis[k] to my_vis
-    call tv, old_vis, my_vis := readTable1(k, my_vis);
-    yield; assert {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen);
-  }
-  assert {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen);
-  assert {:layer 1} (forall n1, n2: Invoc, m: Method, k1, v1: int ::
-                     hb(n1, this) && elem(n2, vis[n1]) && n2 == invoc(m, k1, v1)
-                     // TODO to remove last conjunct above, use ADTs!!
-                     ==> elem(n2, my_vis));
-  yield; assert {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen);
-
-  return;
-}
 // How to create a constant map with a default value, using a Z3 builtin
 // function {:builtin "MapConst"} createMapConst(bool) : [Invoc]bool;
 
