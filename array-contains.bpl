@@ -53,6 +53,9 @@ axiom (forall s: SetInvoc :: subset(s, s));
 // subset is transitive
 axiom (forall s, t, u: SetInvoc :: subset(s, t) && subset(t, u) ==> subset(s, u));
 
+// definition of subset in terms of elem
+axiom (forall s, t: SetInvoc :: (forall n: Invoc :: elem(n, s) ==> elem(n, t)) ==> subset(s, t));
+
 function union(s1: SetInvoc, s2: SetInvoc) returns (t: SetInvoc);
 
 // union is idempotent
@@ -230,8 +233,9 @@ function {:inline} tableInv(table: [int]int, abs: AbsState, tabvis: [int]SetInvo
   && (forall i: int :: 0 <= i && i < tabLen ==> subset(tabvis[i], setOfSeq(lin)))
   // Invariants needed to show monotonicity
   && (forall n1, n2 : Invoc :: called[n1] && hb(n2, n1) ==> returned[n2])
-  && (forall n1, n2 : Invoc ::
+  && (forall n1, n2 : Invoc ::  // TODO try without returned[n1]
      returned[n1] && elem(n2, vis[n1]) ==> elem(n2, tabvis[invoc_k(n2)]))
+  && (forall n1, n2 : Invoc :: elem(n2, vis[n1]) ==> 0 <= invoc_k(n2) && invoc_k(n2) < tabLen)
   // TODO The linearization is consistent with happens-before
 }
 
@@ -255,8 +259,9 @@ procedure {:atomic} {:layer 1} writeTable_spec(k, v: int, n: Invoc)
 
   tabvis[k] := add(tabvis[k], n);
   assume my_vis == unionRange(tabvis, 0, tabLen);
-  // TODO show this
+  // TODO show these
   assume (forall n1: Invoc :: elem(n1, my_vis) ==> elem(n1, tabvis[invoc_k(n1)]));
+  assume (forall n1: Invoc :: elem(n1, my_vis) ==> 0 <= invoc_k(n1) && invoc_k(n1) < tabLen);
 
   vis[n] := my_vis;
 }
@@ -272,8 +277,10 @@ procedure {:atomic} {:layer 1} readTable_spec(k: int, n: Invoc)
 
   tabvis[k] := add(tabvis[k], n);
   assume my_vis == unionRange(tabvis, 0, tabLen);
-  // TODO show this
+  // TODO show these
   assume (forall n1: Invoc :: elem(n1, my_vis) ==> elem(n1, tabvis[invoc_k(n1)]));
+  assume (forall n1: Invoc :: elem(n1, my_vis) ==> 0 <= invoc_k(n1) && invoc_k(n1) < tabLen);
+
   vis[n] := my_vis;
 }
 procedure {:yields} {:layer 0} {:refines "readTable_spec"} readTable(k: int, n: Invoc)
@@ -328,8 +335,6 @@ procedure {:layer 1} {:inline 1} intro_writeAbs(k: int, v: int)
 }
 
 // Special call and return actions
-
-// TODO need to use linear types to ensure that no thread can call spec_return on somone else's invoc!!
 
 procedure {:atomic} {:layer 1} spec_call_spec(m: Method, k, v: int)
   returns ({:linear "this"} this: Invoc)
@@ -491,11 +496,8 @@ procedure {:yields} {:layer 1} {:refines "test_spec"} test()
                        && 0 <= invoc_k(n2) && invoc_k(n2) < k
                        ==> elem(n2, my_vis));
   }
-  assert {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen, called, returned) && thisInv(called, returned, this);
-  // To prove this, need some invariant that says all invocs in tabvis have keys in [0, tabLen]
-  assert {:layer 1} (forall n1, n2: Invoc ::
-                     hb(n1, this) && elem(n2, vis[n1])
-                     ==> elem(n2, my_vis));
+  assert {:layer 1} (forall n1, n2: Invoc :: hb(n1, this) ==> subset(vis[n1], my_vis));
+
   yield; assert {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen, called, returned);
 
   return;
