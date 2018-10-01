@@ -233,8 +233,7 @@ function {:inline} tableInv(table: [int]int, abs: AbsState, tabvis: [int]SetInvo
   && (forall i: int :: 0 <= i && i < tabLen ==> subset(tabvis[i], setOfSeq(lin)))
   // Invariants needed to show monotonicity
   && (forall n1, n2 : Invoc :: called[n1] && hb(n2, n1) ==> returned[n2])
-  && (forall n1, n2 : Invoc ::  // TODO try without returned[n1]
-     returned[n1] && elem(n2, vis[n1]) ==> elem(n2, tabvis[invoc_k(n2)]))
+  && (forall n1, n2 : Invoc :: elem(n2, vis[n1]) ==> elem(n2, tabvis[invoc_k(n2)]))
   && (forall n1, n2 : Invoc :: elem(n2, vis[n1]) ==> 0 <= invoc_k(n2) && invoc_k(n2) < tabLen)
   // TODO The linearization is consistent with happens-before
 }
@@ -341,9 +340,12 @@ procedure {:atomic} {:layer 1} spec_call_spec(m: Method, k, v: int)
   modifies called, returned;
 {
   assume m == invoc_m(this) && k == invoc_k(this) && v == invoc_v(this);
-  assume (forall n1: Invoc :: hb(n1, this) ==> returned[n1]);  // everything before this has returned
-  assume (forall n1: Invoc :: hb(this, n1) ==> !called[n1]);  // everything after this has not been called
-  assume (!called[this] && !returned[this]);  // this has not been called or returned yet
+  // everything before this has returned
+  assume (forall n1: Invoc :: hb(n1, this) ==> returned[n1]);
+  // everything after this has not been called
+  assume (forall n1: Invoc :: hb(this, n1) ==> !called[n1]);
+  // this has not been called or returned yet
+  assume (!called[this] && !returned[this]);
   called[this] := true;
 }
 procedure {:yields} {:layer 0} {:refines "spec_call_spec"}
@@ -480,29 +482,16 @@ procedure {:yields} {:layer 1} {:refines "test_spec"} test()
     // Read table[k] and add tabvis[k] to my_vis
     call tv, old_vis, my_vis := readTable1(k, my_vis);
     k := k + 1;
-    assert {:layer 1} (forall n1, n2: Invoc ::
-                          hb(n1, this) && elem(n2, vis[n1])
-                          && 0 <= invoc_k(n2) && invoc_k(n2) < k
-                          ==> elem(n2, my_vis));
-
-    assert {:layer 1} (forall n1, n2: Invoc ::
-                          hb(n1, this) && elem(n2, vis[n1])
-                          && 0 <= invoc_k(n2) && invoc_k(n2) < k
-      ==> returned[n1]);
-    
-    yield; assert {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen, called, returned) && thisInv(called, returned, this);
-    assert {:layer 1} (forall n1, n2: Invoc ::
-                       hb(n1, this) && elem(n2, vis[n1])
-                       && 0 <= invoc_k(n2) && invoc_k(n2) < k
-                       ==> elem(n2, my_vis));
+    yield; assert {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen, called, returned)
+      && thisInv(called, returned, this)
+      && (forall n1, n2: Invoc :: hb(n1, this) && elem(n2, vis[n1])
+         && 0 <= invoc_k(n2) && invoc_k(n2) < k ==> elem(n2, my_vis));
   }
-  assert {:layer 1} (forall n1, n2: Invoc :: hb(n1, this) ==> subset(vis[n1], my_vis));
-
+  yield; assert {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen, called, returned) && thisInv(called, returned, this);
+  call spec_return(this);
   yield; assert {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen, called, returned);
-
   return;
 }
-
 
 
 /*
