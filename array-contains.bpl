@@ -102,7 +102,7 @@ axiom (forall s, t: SetInvoc, n: Invoc :: subset(s, t) ==> subset(s, add(t, n)))
 // Relation between setOfSeq, add, and append
 axiom (forall q: SeqInvoc, n: Invoc :: setOfSeq(append(q, n)) == add(setOfSeq(q), n));
 
-// Relation between unionRange, add, and append
+// Relation between unionRange, add, and append -- TODO only true if not present already!!
 axiom (forall t: [int]SetInvoc, i, j, k: int, q: SeqInvoc, n: Invoc ::
         unionRange(t, i, j) == setOfSeq(q) && i <= k && k < j ==>
           unionRange(t[k := add(t[k], n)], i, j) == setOfSeq(append(q, n)));
@@ -274,11 +274,12 @@ procedure {:layer 1} intro_add_tabvis(k: int, n: Invoc)
   tabvis[k] := add(tabvis[k], n);
 }
 
-procedure {:layer 1} intro_read_all_tabvis() returns (s: SetInvoc);
-  ensures {:layer 1} s == unionRange(tabvis, 0, tabLen);
+procedure {:layer 1} intro_read_tabvis_range(i, j: int) returns (s: SetInvoc);
+  ensures {:layer 1} s == unionRange(tabvis, i, j);
   // TODO show these
   ensures {:layer 1} (forall n1: Invoc :: elem(n1, s) ==> elem(n1, tabvis[invoc_k(n1)]));
   ensures {:layer 1} (forall n1: Invoc :: elem(n1, s) ==> 0 <= invoc_k(n1) && invoc_k(n1) < tabLen);
+  ensures {:layer 1} (forall n: Invoc, k: int :: elem(n, tabvis[k]) && i <= k && k < j ==> elem(n, s));
 
 procedure {:layer 1} intro_read_tabvis(s: SetInvoc, k: int) returns (t: SetInvoc);
   requires {:layer 1} (forall n1: Invoc :: elem(n1, s) ==> elem(n1, tabvis[invoc_k(n1)]));
@@ -381,7 +382,7 @@ procedure {:yields} {:layer 1} {:refines "put_spec"} put(k, v: int)
   call writeTable(k, v);
 
   call intro_add_tabvis(k, this);
-  call my_vis := intro_read_all_tabvis();
+  call my_vis := intro_read_tabvis_range(0, tabLen);
   call intro_write_vis(this, my_vis);
   call intro_writeAbs(k, v);
   call intro_writeLin(this);
@@ -422,7 +423,7 @@ procedure {:yields} {:layer 1} {:refines "get_spec"} get(k: int)
   call v := readTable(k);
 
   call intro_add_tabvis(k, this);
-  call my_vis := intro_read_all_tabvis();
+  call my_vis := intro_read_tabvis_range(0, tabLen);
   call intro_write_vis(this, my_vis);
   call intro_writeLin(this);
 
@@ -434,11 +435,12 @@ procedure {:yields} {:layer 1} {:refines "get_spec"} get(k: int)
 
 
 procedure {:atomic} {:layer 2} test_spec()
-  modifies vis;
+  modifies lin, vis;
 {
   var {:linear "this"} this: Invoc;
   var my_vis: SetInvoc;
-  assume contains == invoc_m(this) && 0 == invoc_k(this) && 0 == invoc_v(this);
+  assume contains == invoc_m(this) && tabLen-1 == invoc_k(this) && 0 == invoc_v(this);
+  lin := append(lin, this);
   vis[this] := my_vis;
   // test is monotonic
   assume (forall j: Invoc :: hb(j, this) ==> subset(vis[j], my_vis));
@@ -451,10 +453,10 @@ procedure {:yields} {:layer 1} {:refines "test_spec"} test()
 {
   var k, tv: int;
   var {:linear "this"} this: Invoc;
-  var old_vis: SetInvoc; var old_tabvis: [int]SetInvoc;
-  var {:layer 1} my_vis: SetInvoc;
+  var {:layer 1} my_vis, my_vis1: SetInvoc;
+  var nondet: bool;
   yield; assert {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen, called, returned);
-  call this := spec_call(contains, 0, 0);
+  call this := spec_call(contains, tabLen-1, 0);
   yield; assert {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen, called, returned) && thisInv(called, returned, this);
 
   k := 0;
@@ -473,6 +475,25 @@ procedure {:yields} {:layer 1} {:refines "test_spec"} test()
     // Read table[k] and add tabvis[k] to my_vis
     call tv := readTable(k);
     call my_vis := intro_read_tabvis(my_vis, k);
+
+    havoc nondet;
+    if (nondet) {
+      call my_vis1 := intro_read_tabvis_range(k+1, tabLen);
+      assert {:layer 1} (forall n1, n2: Invoc ::
+                          hb(n1, this) && elem(n2, vis[n1])
+                          && 0 <= invoc_k(n2) && invoc_k(n2) < k+1
+                          ==> elem(n2, my_vis));
+      my_vis := union(my_vis, my_vis1);
+      call intro_write_vis(this, my_vis);
+      call intro_add_tabvis(tabLen-1, this);
+      call intro_writeLin(this);
+
+      assert {:layer 1} true;
+      yield; assert {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen, called, returned) && thisInv(called, returned, this);
+      call spec_return(this);
+      yield; assert {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen, called, returned);
+      return;
+    }
     k := k + 1;
     yield; assert {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen, called, returned)
       && thisInv(called, returned, this)
@@ -489,8 +510,8 @@ procedure {:yields} {:layer 1} {:refines "test_spec"} test()
                           && 0 <= invoc_k(n2) && invoc_k(n2) < k
                           ==> elem(n2, my_vis));
   call intro_write_vis(this, my_vis);
-
-  assert {:layer 1} (forall n1, n2 : Invoc :: elem(n2, vis[n1]) ==> 0 <= invoc_k(n2) && invoc_k(n2) < tabLen);
+  call intro_add_tabvis(tabLen-1, this);
+  call intro_writeLin(this);
 
   yield; assert {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen, called, returned) && thisInv(called, returned, this);
   call spec_return(this);
