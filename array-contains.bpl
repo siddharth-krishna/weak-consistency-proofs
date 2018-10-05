@@ -24,16 +24,8 @@ type SeqInvoc;
 
 function append(s: SeqInvoc, o: Invoc) returns (t: SeqInvoc);
 
-/*
-// append preserves subset
-axiom (forall s, t: SeqInvoc, o: Invoc :: subset(s, t) ==>
-        subset(append(s, o), append(t, o)));
-axiom (forall s, t: SeqInvoc, o: Invoc :: subset(s, t) ==>
-        subset(s, append(t, o)));
-*/
 
-
-// Sets of invocations -- TODO Z3 supports sets?
+// Sets of invocations
 type SetInvoc;
 const emptySet: SetInvoc;
 
@@ -74,13 +66,6 @@ axiom (forall n: Invoc, s, s1, t: SetInvoc :: elem(n, s) && s1 == union(s, t) ==
 
 // Calculate the union m[i] \cup ... \cup m[j-1]
 function unionRange(m: [int]SetInvoc, i: int, j: int) returns (s: SetInvoc);
-
-// Relation between unionRange and add
-/*
-axiom (forall m: [int]SetInvoc, i, j: int ::{unionRange(m, i, j)}
-       (forall s: SetInvoc, n: Invoc ::
-       s == unionRange(m, i, j) && elem(n, s) ==> (exists k : int :: elem(n, m[k]))));
-*/
 
 function setOfSeq(q: SeqInvoc) returns (s: SetInvoc);
 
@@ -134,8 +119,9 @@ axiom (forall s: SetInvoc, k: int :: subset(restr(s, k), s));
 axiom (forall s, t: SetInvoc, k: int :: subset(s, t) ==> subset(restr(s, k), restr(t, k)));
 
 // Adding an invocation on k increases restr
-axiom (forall q: SeqInvoc, n: Invoc :: restr(setOfSeq(append(q, n)), invoc_k(n))
-       == add(restr(setOfSeq(q), invoc_k(n)), n));
+axiom (forall q: SeqInvoc, n: Invoc :: {restr(setOfSeq(append(q, n)), invoc_k(n))}
+        restr(setOfSeq(append(q, n)), invoc_k(n))
+          == add(restr(setOfSeq(q), invoc_k(n)), n));
 
 // Adding invocations not on k preserves restr
 axiom (forall q: SeqInvoc, n: Invoc, k: int :: invoc_k(n) != k
@@ -177,6 +163,15 @@ axiom (forall s0, s1, t: SetInvoc, k: int ::
         s1 == union(s0, t) && subset(restr(s0, k), t) ==>
           restr(s1, k) == restr(t, k)
 );
+
+// Union of disjoint keys means state comes from one of the two sets
+procedure {:layer 1} lemma_state_union(k: int, s, t: SetInvoc);
+  requires (forall n: Invoc :: elem(n, s) ==> invoc_k(n) < k);
+  requires (forall n: Invoc :: elem(n, t) ==> k <= invoc_k(n));
+  ensures (forall i: int :: 0 <= i && i < k ==>
+    state(union(s, t), lin)[i] == state(s, lin)[i]);
+  ensures (forall i: int :: k <= i && i < tabLen ==>
+    state(union(s, t), lin)[i] == state(t, lin)[i]);
 
 
 // ---------- Representation of execution and linearization
@@ -284,13 +279,11 @@ procedure {:layer 1} intro_read_tabvis_range(i, j: int) returns (s: SetInvoc);
   ensures {:layer 1} (forall n1: Invoc :: elem(n1, s)
     ==> i <= invoc_k(n1) && invoc_k(n1) < j);
 
-procedure {:layer 1} intro_read_tabvis(s: SetInvoc, k: int) returns (t: SetInvoc);
-//  requires {:layer 1} (forall n1: Invoc :: elem(n1, s) ==> elem(n1, tabvis[invoc_k(n1)]));
-//  requires {:layer 1} (forall n1 : Invoc :: elem(n1, s) ==> 0 <= invoc_k(n1) && invoc_k(n1) < tabLen);
-  ensures {:layer 1} t == union(s, tabvis[k]);
-  // TODO show these
-  ensures {:layer 1} (forall n1: Invoc :: elem(n1, t) ==> elem(n1, tabvis[invoc_k(n1)]));
-  ensures {:layer 1} (forall n1 : Invoc :: elem(n1, t) ==> 0 <= invoc_k(n1) && invoc_k(n1) < tabLen);
+procedure {:layer 1} intro_read_tabvis(k: int) returns (s: SetInvoc)
+  ensures {:layer 1} s == tabvis[k];
+{
+  s := tabvis[k];
+}
 
 procedure {:layer 1} intro_write_vis(n: Invoc, s: SetInvoc)
   modifies vis;
@@ -343,25 +336,6 @@ procedure {:atomic} {:layer 1} spec_return_spec({:linear "this"} this: Invoc)
 }
 procedure {:yields} {:layer 0} {:refines "spec_return_spec"}
   spec_return({:linear "this"} this: Invoc);
-
-
-// ---------- Introduction actions used to encode assume statements -- prove these
-
-// TODO true because tabvis[k] only affects state of k
-// Problem: how to say (t affects only k) ==> state(union(s, t))[i != k] == state(s)[i]
-// without quantifier alternation?
-// TODO use lemma_state_union instead
-procedure {:layer 1} lemma_state_unchanged(k: int, old_vis, new_vis: SetInvoc);
-  requires new_vis == union(old_vis, tabvis[k]) && 0 <= k && k < tabLen;
-  ensures (forall i: int :: 0 <= i && i < k ==> state(new_vis, lin)[i] == state(old_vis, lin)[i]);
-
-procedure {:layer 1} lemma_state_union(k: int, s, t: SetInvoc);
-  requires (forall n: Invoc :: elem(n, s) ==> invoc_k(n) < k);
-  requires (forall n: Invoc :: elem(n, t) ==> k <= invoc_k(n));
-  ensures (forall i: int :: 0 <= i && i < k ==>
-    state(union(s, t), lin)[i] == state(s, lin)[i]);
-  ensures (forall i: int :: k <= i && i < tabLen ==>
-    state(union(s, t), lin)[i] == state(t, lin)[i]);
 
 
 // ---------- The ADT methods
@@ -585,12 +559,16 @@ procedure {:yields} {:layer 1} {:refines "contains_spec"} contains(v: int)
                           && 0 <= invoc_k(n2) && invoc_k(n2) < k
                           ==> elem(n2, my_vis));
   {
+    assert {:layer 1} (forall n: Invoc :: elem(n, my_vis) ==> invoc_k(n) < k);
     // Read table[k] and add tabvis[k] to my_vis
     call tv := readTable(k);
     
+    call my_vis1 := intro_read_tabvis(k);
+    //  ensures {:layer 1} (forall n1: Invoc :: elem(n1, t) ==> elem(n1, tabvis[invoc_k(n1)]));
+    //  ensures {:layer 1} (forall n1 : Invoc :: elem(n1, t) ==> 0 <= invoc_k(n1) && invoc_k(n1) < tabLen);
     old_vis := my_vis;
-    call my_vis := intro_read_tabvis(my_vis, k);
-    call lemma_state_unchanged(k, old_vis, my_vis);
+    my_vis := union(my_vis, my_vis1);
+    call lemma_state_union(k, old_vis, my_vis1);
 
     // tv == table[k] == abs[k] == state(tabvis[k], lin)[k]
     // old_vis < setOfSeq(lin) ==> restr(old_vis, k) < restr(setOfSeq(lin), k)
@@ -649,13 +627,6 @@ procedure {:yields} {:layer 1} {:refines "contains_spec"} contains(v: int)
   witness_k := k;
 
   res := false;
-
-  // TODO adding this causes divergence. Investigate
-  // assert {:layer 1} (forall i: int :: 0 <= i && i < k ==>
-  //                      restr(setOfSeq(lin), i) == restr(setOfSeq(old_lin), i)
-  //                      && tabvis[i] == add(old_tabvis[i], this));
-  //  assert {:layer 1} lin == append(old_lin, this) && my_vis == add(old_vis, this)
-  //    && (forall i: int :: 0 <= i && i < tabLen ==> state(my_vis, lin)[i] == state(old_vis, old_lin)[i]);
 
   yield; assert {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen, called, returned) && thisInv(called, returned, this);
   call spec_return(this);
