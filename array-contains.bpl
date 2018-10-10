@@ -1,15 +1,14 @@
+// ----------------------------------------
 // A simplified hash table implementation with weakly consistent contains method
+// The hash function is identity, so this is essentially a concurrent array
+// ----------------------------------------
 
 
-// ---------- Types and axiomatization of sequences of invocations
+// ---------- Types of methods and invocations
 
 type Method;
-const unique get, put, contains: Method;
 
 type Invoc;
-function invoc_m(n: Invoc) : Method;
-function invoc_k(n: Invoc) : int;
-function invoc_v(n: Invoc) : int;
 
 // Boilerplate stuff for linear variables
 function {:builtin "MapConst"} MapConstBool(bool) : [Invoc]bool;
@@ -19,11 +18,15 @@ function {:inline} {:linear "this"} TidCollector(x: Invoc) : [Invoc]bool
 }
 
 
+// ---------- Types and axiomatization of sequences (of invocations)
+
 // Sequences of invocations
 type SeqInvoc;
 
 function append(s: SeqInvoc, o: Invoc) returns (t: SeqInvoc);
 
+
+// ---------- Types and axiomatization of sets (of invocations)
 
 // Sets of invocations
 type SetInvoc;
@@ -109,6 +112,15 @@ axiom (forall t: [int]SetInvoc, i, j, i1, j1: int, q: SeqInvoc, n: Invoc ::
         unionRange(t, i, j) == setOfSeq(q) && i <= i1 && i1 < j1 && j1 <= j ==>
           unionRange(addRange(t, n, i1, j1), i, j) == setOfSeq(append(q, n)));
 
+
+// ---------- Axioms of the map ADT
+
+const unique get, put, contains: Method;
+
+function invoc_m(n: Invoc) : Method;
+function invoc_k(n: Invoc) : int;
+function invoc_v(n: Invoc) : int;
+
 // A function to restrict a SetInvoc to invocations involving key k
 function restr(s: SetInvoc, k: int) returns (t: SetInvoc);
 
@@ -133,8 +145,6 @@ type AbsState = [int]int; // Abstract state
 // a sequence of invocations lin
 function state(vis: SetInvoc, lin: SeqInvoc) returns (m: AbsState);
 
-
-// ---------- Some lemmas of this ADT that we need
 
 // The effect of appending an invocation on key k on state of k
 axiom (forall s1, s2: SetInvoc, q1, q2: SeqInvoc, n: Invoc ::
@@ -236,7 +246,7 @@ function {:inline} tableInv(table: [int]int, abs: AbsState, tabvis: [int]SetInvo
   // TODO The linearization is consistent with happens-before
 }
 
-function {:inline} thisInv(called: [Invoc]bool, returned: [Invoc]bool, this: Invoc) : bool
+function {:inline} inProgress(called: [Invoc]bool, returned: [Invoc]bool, this: Invoc) : bool
 {
   called[this] && !returned[this]
 }
@@ -262,7 +272,7 @@ procedure {:yields} {:layer 0} {:refines "readTable_spec"} readTable(k: int)
   returns (v: int);
 
 
-// Introduction actions:
+// ---------- Introduction actions:
 
 procedure {:layer 1} intro_add_tabvis(k: int, n: Invoc)
   // TODO why don't these follow from the body?
@@ -356,7 +366,7 @@ procedure {:yields} {:layer 1} {:refines "put_spec"} put(k, v: int)
   var {:layer 1} my_vis: SetInvoc;
   yield; assert {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen, called, returned);
   call this := spec_call(put, k, v);
-  yield; assert {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen, called, returned) && thisInv(called, returned, this);
+  yield; assert {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen, called, returned) && inProgress(called, returned, this);
 
   call writeTable(k, v);
 
@@ -367,7 +377,7 @@ procedure {:yields} {:layer 1} {:refines "put_spec"} put(k, v: int)
   call intro_writeLin(this);
 
   yield; assert {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen, called, returned)
-    && thisInv(called, returned, this);
+    && inProgress(called, returned, this);
   call spec_return(this);
   yield; assert {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen, called, returned);
 }
@@ -397,7 +407,7 @@ procedure {:yields} {:layer 1} {:refines "get_spec"} get(k: int)
   var {:layer 1} my_vis: SetInvoc;
   yield; assert {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen, called, returned);
   call this := spec_call(get, k, v);
-  yield; assert {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen, called, returned) && thisInv(called, returned, this);
+  yield; assert {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen, called, returned) && inProgress(called, returned, this);
 
   call v := readTable(k);
 
@@ -407,7 +417,7 @@ procedure {:yields} {:layer 1} {:refines "get_spec"} get(k: int)
   call intro_writeLin(this);
 
   yield; assert {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen, called, returned)
-  && thisInv(called, returned, this);
+  && inProgress(called, returned, this);
   call spec_return(this);
   yield; assert {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen, called, returned);
 }
@@ -446,14 +456,14 @@ procedure {:yields} {:layer 1} {:refines "contains_spec"} contains(v: int)
   var {:layer 1} my_vis, my_vis1: SetInvoc;
   yield; assert {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen, called, returned);
   call this := spec_call(contains, tabLen-1, v);
-  yield; assert {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen, called, returned) && thisInv(called, returned, this);
+  yield; assert {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen, called, returned) && inProgress(called, returned, this);
 
   k := 0;
   my_vis := emptySet;
 
   while (k < tabLen)
     invariant {:layer 1} 0 <= k && k <= tabLen;
-    invariant {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen, called, returned) && thisInv(called, returned, this);
+    invariant {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen, called, returned) && inProgress(called, returned, this);
     invariant {:layer 1} (forall i: int :: 0 <= i && i < k ==> state(my_vis, lin)[i] != v);
     invariant {:layer 1} subset(my_vis, setOfSeq(lin));
     invariant {:layer 1} (forall n1 : Invoc :: elem(n1, my_vis) ==> elem(n1, tabvis[invoc_k(n1)]));
@@ -486,13 +496,13 @@ procedure {:yields} {:layer 1} {:refines "contains_spec"} contains(v: int)
 
       res := true;
 
-      yield; assert {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen, called, returned) && thisInv(called, returned, this);
+      yield; assert {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen, called, returned) && inProgress(called, returned, this);
       call spec_return(this);
       yield; assert {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen, called, returned);
       return;
     }
     k := k + 1;
-    yield; assert {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen, called, returned) && thisInv(called, returned, this)
+    yield; assert {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen, called, returned) && inProgress(called, returned, this)
       && (forall i: int :: 0 <= i && i < k ==> state(my_vis, lin)[i] != v)
       && subset(my_vis, setOfSeq(lin))
       && (forall n1 : Invoc :: elem(n1, my_vis) ==> elem(n1, tabvis[invoc_k(n1)]))
@@ -500,7 +510,7 @@ procedure {:yields} {:layer 1} {:refines "contains_spec"} contains(v: int)
       assert {:layer 1} (forall n1, n2: Invoc :: hb(n1, this) && elem(n2, vis[n1])
          && 0 <= invoc_k(n2) && invoc_k(n2) < k ==> elem(n2, my_vis));
   }
-  yield; assert {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen, called, returned) && thisInv(called, returned, this)
+  yield; assert {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen, called, returned) && inProgress(called, returned, this)
     && (forall i: int :: 0 <= i && i < tabLen ==> state(my_vis, lin)[i] != v)
     && (forall n1 : Invoc :: elem(n1, my_vis) ==> elem(n1, tabvis[invoc_k(n1)]))
     && (forall n1 : Invoc :: elem(n1, my_vis) ==> 0 <= invoc_k(n1) && invoc_k(n1) < tabLen)
@@ -516,7 +526,7 @@ procedure {:yields} {:layer 1} {:refines "contains_spec"} contains(v: int)
 
   res := false;
 
-  yield; assert {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen, called, returned) && thisInv(called, returned, this);
+  yield; assert {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen, called, returned) && inProgress(called, returned, this);
   call spec_return(this);
   yield; assert {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen, called, returned);
   return;
