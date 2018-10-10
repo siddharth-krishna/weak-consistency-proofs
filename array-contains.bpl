@@ -23,7 +23,16 @@ function {:inline} {:linear "this"} TidCollector(x: Invoc) : [Invoc]bool
 // Sequences of invocations
 type SeqInvoc;
 
-function append(s: SeqInvoc, o: Invoc) returns (t: SeqInvoc);
+function Seq_append(s: SeqInvoc, o: Invoc) returns (t: SeqInvoc);
+
+function Seq_elem(n: Invoc, s: SeqInvoc) : bool;
+
+// Relationship between elem and append
+axiom (forall n1, n2: Invoc, s: SeqInvoc :: {Seq_elem(n1, Seq_append(s, n2))}
+       Seq_elem(n1, s) ==> Seq_elem(n1, Seq_append(s, n2)));
+
+axiom (forall n: Invoc, s: SeqInvoc :: {Seq_elem(n, Seq_append(s, n))}
+       Seq_elem(n, Seq_append(s, n)));
 
 
 // ---------- Types and axiomatization of sets (of invocations)
@@ -88,12 +97,12 @@ axiom (forall s, t: SetInvoc, n: Invoc :: subset(s, t) ==> subset(add(s, n), add
 axiom (forall s, t: SetInvoc, n: Invoc :: subset(s, t) ==> subset(s, add(t, n)));
 
 // Relation between setOfSeq, add, and append
-axiom (forall q: SeqInvoc, n: Invoc :: setOfSeq(append(q, n)) == add(setOfSeq(q), n));
+axiom (forall q: SeqInvoc, n: Invoc :: setOfSeq(Seq_append(q, n)) == add(setOfSeq(q), n));
 
-// Relation between unionRange, add, and append -- TODO only true if not present already!!
+// Relation between unionRange, add, and append
 axiom (forall t: [int]SetInvoc, i, j, k: int, q: SeqInvoc, n: Invoc ::
-        unionRange(t, i, j) == setOfSeq(q) && i <= k && k < j ==>
-          unionRange(t[k := add(t[k], n)], i, j) == setOfSeq(append(q, n)));
+        unionRange(t, i, j) == setOfSeq(q) && i <= k && k < j
+        ==> unionRange(t[k := add(t[k], n)], i, j) == setOfSeq(Seq_append(q, n)));
 
 // Add n to m[i], ..., m[j-1]
 function addRange(m: [int]SetInvoc, n: Invoc, i: int, j: int)
@@ -110,7 +119,7 @@ axiom (forall m, m1: [int]SetInvoc, n: Invoc, i: int, j: int, k: int ::
 // What happens to unionRange and setOfSeq when you do an addRange
 axiom (forall t: [int]SetInvoc, i, j, i1, j1: int, q: SeqInvoc, n: Invoc ::
         unionRange(t, i, j) == setOfSeq(q) && i <= i1 && i1 < j1 && j1 <= j ==>
-          unionRange(addRange(t, n, i1, j1), i, j) == setOfSeq(append(q, n)));
+          unionRange(addRange(t, n, i1, j1), i, j) == setOfSeq(Seq_append(q, n)));
 
 
 // ---------- Axioms of the map ADT
@@ -131,13 +140,13 @@ axiom (forall s: SetInvoc, k: int :: subset(restr(s, k), s));
 axiom (forall s, t: SetInvoc, k: int :: subset(s, t) ==> subset(restr(s, k), restr(t, k)));
 
 // Adding an invocation on k increases restr
-axiom (forall q: SeqInvoc, n: Invoc :: {restr(setOfSeq(append(q, n)), invoc_k(n))}
-        restr(setOfSeq(append(q, n)), invoc_k(n))
+axiom (forall q: SeqInvoc, n: Invoc :: {restr(setOfSeq(Seq_append(q, n)), invoc_k(n))}
+        restr(setOfSeq(Seq_append(q, n)), invoc_k(n))
           == add(restr(setOfSeq(q), invoc_k(n)), n));
 
 // Adding invocations not on k preserves restr
 axiom (forall q: SeqInvoc, n: Invoc, k: int :: invoc_k(n) != k
-       ==> restr(setOfSeq(append(q, n)), k) == restr(setOfSeq(q), k));
+       ==> restr(setOfSeq(Seq_append(q, n)), k) == restr(setOfSeq(q), k));
 
 type AbsState = [int]int; // Abstract state
 
@@ -148,18 +157,18 @@ function state(vis: SetInvoc, lin: SeqInvoc) returns (m: AbsState);
 
 // The effect of appending an invocation on key k on state of k
 axiom (forall s1, s2: SetInvoc, q1, q2: SeqInvoc, n: Invoc ::
-       q2 == append(q1, n) && s2 == add(s1, n)
+       q2 == Seq_append(q1, n) && s2 == add(s1, n)
        ==> (invoc_m(n) == put ==> state(s2, q2)[invoc_k(n)] == invoc_v(n)));
 
 // Appending a get/contains invocation does not change state
 axiom (forall s1, s2: SetInvoc, q1, q2: SeqInvoc, n: Invoc, k: int ::
-       q2 == append(q1, n) && s2 == add(s1, n)
+       q2 == Seq_append(q1, n) && s2 == add(s1, n)
        && (invoc_m(n) == get || invoc_m(n) == contains)
        ==> state(s2, q2)[k] == state(s1, q1)[k]);
 
 // The effect of appending an invocation on key k on state with unchanged vis
 axiom (forall s: SetInvoc, q1: SeqInvoc, n: Invoc, k: int ::
-          state(s, q1)[k] == state(s, append(q1, n))[k]);
+          state(s, q1)[k] == state(s, Seq_append(q1, n))[k]);
 
 
 // The mapping of key k depends only invocations involving k
@@ -243,7 +252,8 @@ function {:inline} tableInv(table: [int]int, abs: AbsState, tabvis: [int]SetInvo
   // Sanity conditions on vis sets
   && (forall n1, n2 : Invoc :: elem(n2, vis[n1]) ==> elem(n2, tabvis[invoc_k(n2)]))
   && (forall n1, n2 : Invoc :: elem(n2, vis[n1]) ==> 0 <= invoc_k(n2) && invoc_k(n2) < tabLen)
-  // TODO The linearization is consistent with happens-before
+  // To establish precondition of intro_writeLin
+  && (forall n: Invoc :: returned[n] ==> Seq_elem(n, lin))
 }
 
 function {:inline} inProgress(called: [Invoc]bool, returned: [Invoc]bool, this: Invoc) : bool
@@ -304,9 +314,11 @@ procedure {:layer 1} intro_write_vis(n: Invoc, s: SetInvoc)
 }
 
 procedure {:layer 1} {:inline 1} intro_writeLin(n: Invoc)
+  // To show that linearization is consistent with happens-before
+  requires {:layer 1} (forall n1 : Invoc :: hb(n1, n) ==> Seq_elem(n1, lin));
   modifies lin;
 {
-  lin := append(lin, n);
+  lin := Seq_append(lin, n);
 }
 
 procedure {:layer 1} {:inline 1} intro_writeAbs(k: int, v: int)
@@ -348,7 +360,7 @@ procedure {:atomic} {:layer 2} put_spec(k: int, v: int)
   var {:linear "this"} this: Invoc;
   var my_vis: SetInvoc;
   assume put == invoc_m(this) && k == invoc_k(this) && v == invoc_v(this);
-  lin := append(lin, this);
+  lin := Seq_append(lin, this);
   vis[this] := my_vis;
   // Put is complete
   assume my_vis == setOfSeq(lin);
@@ -377,7 +389,7 @@ procedure {:yields} {:layer 1} {:refines "put_spec"} put(k, v: int)
   call intro_writeLin(this);
 
   yield; assert {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen, called, returned)
-    && inProgress(called, returned, this);
+    && inProgress(called, returned, this) && Seq_elem(this, lin);
   call spec_return(this);
   yield; assert {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen, called, returned);
 }
@@ -388,7 +400,7 @@ procedure {:atomic} {:layer 2} get_spec(k: int) returns (v: int)
 {
   var {:linear "this"} this: Invoc; var my_vis: SetInvoc;
   assume get == invoc_m(this) && k == invoc_k(this);
-  lin := append(lin, this);
+  lin := Seq_append(lin, this);
   vis[this] := my_vis;
   // Get is complete -- TODO make predicate
   assume my_vis == setOfSeq(lin);
@@ -417,7 +429,7 @@ procedure {:yields} {:layer 1} {:refines "get_spec"} get(k: int)
   call intro_writeLin(this);
 
   yield; assert {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen, called, returned)
-  && inProgress(called, returned, this);
+    && inProgress(called, returned, this) && Seq_elem(this, lin);
   call spec_return(this);
   yield; assert {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen, called, returned);
 }
@@ -437,7 +449,7 @@ procedure {:atomic} {:layer 2} contains_spec(v: int)
   var {:linear "this"} this: Invoc;
   var my_vis: SetInvoc;
   assume contains == invoc_m(this) && tabLen-1 == invoc_k(this) && v == invoc_v(this);
-  lin := append(lin, this);
+  lin := Seq_append(lin, this);
   vis[this] := my_vis;
   // Contains is monotonic
   assume (forall j: Invoc :: hb(j, this) ==> subset(vis[j], my_vis));
@@ -496,7 +508,8 @@ procedure {:yields} {:layer 1} {:refines "contains_spec"} contains(v: int)
 
       res := true;
 
-      yield; assert {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen, called, returned) && inProgress(called, returned, this);
+      yield; assert {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen, called, returned)
+        && inProgress(called, returned, this) && Seq_elem(this, lin);
       call spec_return(this);
       yield; assert {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen, called, returned);
       return;
@@ -526,7 +539,8 @@ procedure {:yields} {:layer 1} {:refines "contains_spec"} contains(v: int)
 
   res := false;
 
-  yield; assert {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen, called, returned) && inProgress(called, returned, this);
+  yield; assert {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen, called, returned)
+    && inProgress(called, returned, this) && Seq_elem(this, lin);
   call spec_return(this);
   yield; assert {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen, called, returned);
   return;
