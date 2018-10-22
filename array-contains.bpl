@@ -74,7 +74,7 @@ axiom (forall s, t1, t2: SetInvoc :: Set_subset(t1, t2) ==> Set_subset(Set_union
 axiom (forall s, t1, t2: SetInvoc :: Set_subset(t1, s) && Set_subset(t2, s) ==> Set_subset(Set_union(t1, t2), s));
 
 // relation between union and elem
-axiom (forall n: Invoc, s, s1, t: SetInvoc :: Set_elem(n, s) && s1 == Set_union(s, t) ==> Set_elem(n, s1));
+axiom (forall n: Invoc, s, t: SetInvoc :: Set_elem(n, s) ==> Set_elem(n, Set_union(s, t)));
 
 // Calculate the union m[i] \cup ... \cup m[j-1]
 function unionRange(m: [int]SetInvoc, i: int, j: int) returns (s: SetInvoc);
@@ -109,12 +109,10 @@ function addRange(m: [int]SetInvoc, n: Invoc, i: int, j: int)
   returns (m1: [int]SetInvoc);
 
 // The effect of addRange
-axiom (forall m, m1: [int]SetInvoc, n: Invoc, i: int, j: int, k: int ::
-        m1 == addRange(m, n, i, j) && i <= k && k < j
-        ==> m1[k] == Set_add(m[k], n));
-axiom (forall m, m1: [int]SetInvoc, n: Invoc, i: int, j: int, k: int ::
-        m1 == addRange(m, n, i, j) && !(i <= k && k < j)
-        ==> m1[k] == m[k]);
+axiom (forall m: [int]SetInvoc, n: Invoc, i: int, j: int, k: int ::
+        i <= k && k < j ==> addRange(m, n, i, j)[k] == Set_add(m[k], n));
+axiom (forall m: [int]SetInvoc, n: Invoc, i: int, j: int, k: int ::
+        !(i <= k && k < j) ==> addRange(m, n, i, j)[k] == m[k]);
 
 // What happens to unionRange and setOfSeq when you do an addRange
 axiom (forall t: [int]SetInvoc, i, j, i1, j1: int, q: SeqInvoc, n: Invoc ::
