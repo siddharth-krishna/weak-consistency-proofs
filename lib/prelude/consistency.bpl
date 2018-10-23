@@ -43,7 +43,7 @@ procedure {:atomic} {:layer 1} spec_return_spec({:linear "this"} this: Invoc)
 procedure {:yields} {:layer 0} {:refines "spec_return_spec"}
   spec_return({:linear "this"} this: Invoc);
 
-function {:inline} inProgress(called: [Invoc]bool, returned: [Invoc]bool, this: Invoc) : bool
+function {:inline} pending(called: [Invoc]bool, returned: [Invoc]bool, this: Invoc) : bool
 {
   called[this] && !returned[this]
 }
