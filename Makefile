@@ -1,6 +1,6 @@
 civl = boogie -noinfer -typeEncoding:m -useArrayTheory
 adts = $(patsubst lib/adts/%.bpl,%,$(wildcard lib/adts/*.bpl))
-impls = $(patsubst lib/impls/%.bpl,%,$(wildcard lib/impls/*.bpl))
+impls = $(patsubst lib/impls/%,%,$(wildcard lib/impls/*))
 prelude = $(wildcard lib/prelude/*.bpl)
 
 .PHONY: all checks prelude $(adts) $(impls)
@@ -22,7 +22,7 @@ $(adts): %: lib/adts/%.bpl
 	@echo ---
 
 .SECONDEXPANSION:
-$(impls): %: $(prelude) lib/adts/$$(lastword $$(subst -, ,$$@)).bpl lib/impls/%.bpl
+$(impls): %: $(prelude) lib/adts/$$(lastword $$(subst -, ,$$@)).bpl $$(wildcard lib/impls/$$@/*.bpl)
 	@echo Verifying implementation: $@
 	@echo ---
 	@$(civl) $^
