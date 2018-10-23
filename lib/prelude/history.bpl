@@ -1,12 +1,16 @@
-// ---------- Representation of execution
+/**
+ * Imported declarations
+ */
 
-// hb(x, y) : x happens-before y.
-// We assume there exists such a function, given by the client program
-function hb(x: Invoc, y: Invoc) : bool;
-axiom (forall n: Invoc :: !hb(n, n));
+// type Invoc;
+// type Method
+// type ArgList
+// function Invoc.name(i: Invoc): Method;
+// function Invoc.args(i: Invoc): ArgList;
+// function hb(x: Invoc, y: Invoc) : bool;
 
 /**
- * Interface members
+ * Exported declarations
  */
 
 type History;
@@ -23,7 +27,7 @@ procedure {:yields} {:layer 0} {:refines "_return"}
 History.return({:linear "this"} this: Invoc);
 
 /**
- * Internal members
+ * Internal declarations
  */
 
 function _called(h: History): [Invoc] bool;
