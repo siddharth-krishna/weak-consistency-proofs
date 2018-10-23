@@ -21,6 +21,9 @@ function Map.ofSeq(seq: Seq): Map.State;
 // A function to Map.restrict a Set to invocations involving key ke
 function Map.restr(s: Set, k: int): Set;
 
+// TODO define this function, which may be useful for Map.ofSeq
+function Map.restrSeq(s: Seq, k: int): Seq;
+
 // Union of disjoint keys means state comes from one of the two sets
 procedure {:layer 1} lemma_state_Set.union(k: int, K: int, s, t: Set);
   requires (forall n: Invoc :: Set.elem(n, s) ==> Map.key(n) < k);
@@ -54,6 +57,16 @@ axiom (forall q: Seq, n: Invoc :: {Map.restr(Set.ofSeq(Seq.append(q, n)), Map.ke
 axiom (forall q: Seq, n: Invoc, k: int :: Map.key(n) != k
        ==> Map.restr(Set.ofSeq(Seq.append(q, n)), k) == Map.restr(Set.ofSeq(q), k));
 
+// Taking union with a Map.restriction of a super-set means Map.restrictions are same
+axiom (forall s0, s1, t: Set, k: int ::
+       s1 == Set.union(s0, t) && Set.subset(Map.restr(s0, k), t) ==>
+         Map.restr(s1, k) == Map.restr(t, k)
+);
+
+/**
+ * The axioms that define the Map.ofVis function
+ */
+
 // The effect of appending an invocation on key k on state of k
 axiom (forall s1, s2: Set, q1, q2: Seq, n: Invoc ::
        q2 == Seq.append(q1, n) && s2 == Set.add(s1, n)
@@ -75,8 +88,30 @@ axiom (forall s: Set, q: Seq, k: int ::
 axiom (forall q: Seq, k: int ::
         Map.ofVis(Set.ofSeq(q), q)[k] == Map.ofVis(Map.restr(Set.ofSeq(q), k), q)[k]);
 
-// Taking union with a Map.restriction of a super-set means Map.restrictions are same
-axiom (forall s0, s1, t: Set, k: int ::
-        s1 == Set.union(s0, t) && Set.subset(Map.restr(s0, k), t) ==>
-          Map.restr(s1, k) == Map.restr(t, k)
+/**
+ * The axioms that define the Map.ofSeq function.
+ * TODO we should define ADTs using Map.ofSeq instead of Map.ofVis
+ */
+
+// The put method updates the mapping for a given key
+axiom (forall s: Seq, n: Invoc ::
+  Invoc.name(n) == Map.put
+  ==> Map.ofSeq(Seq.append(s,n))[Map.key(n)] == Map.value(n)
+);
+
+// The put method only updates the given key
+axiom (forall s: Seq, n: Invoc, k: int ::
+  Invoc.name(n) == Map.put && k != Map.key(n)
+  ==> Map.ofSeq(Seq.append(s,n))[k] == Map.ofSeq(s)[k]
+);
+
+// The get and contains methods do not modify ADT state
+axiom (forall s: Seq, n: Invoc ::
+  Invoc.name(n) == Map.get || Invoc.name(n) == Map.contains
+  ==> Map.ofSeq(Seq.append(s,n)) == Map.ofSeq(s)
+);
+
+// The mapping of a given key depends only upon invocations mentioning it
+axiom (forall s: Seq, n: Invoc, k: int ::
+  Map.ofSeq(s)[k] == Map.ofSeq(Map.restrSeq(s, k))[k]
 );
