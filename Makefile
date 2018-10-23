@@ -25,5 +25,5 @@ $(adts): %: lib/adts/%.bpl
 $(impls): %: $(prelude) lib/adts/$$(lastword $$(subst -, ,$$@)).bpl lib/impls/%.bpl
 	@echo Verifying implementation: $@
 	@echo ---
-	$(civl) $^
+	@$(civl) $^
 	@echo ---
