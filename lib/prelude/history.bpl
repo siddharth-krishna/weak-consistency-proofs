@@ -5,14 +5,29 @@
 function hb(x: Invoc, y: Invoc) : bool;
 axiom (forall n: Invoc :: !hb(n, n));
 
+/**
+ * Interface members
+ */
+
 type History;
 var {:layer 0,1} h: History;
 
-function _called(h: History): [Invoc] bool;
-function _returned(h: History): [Invoc] bool;
 function {:inline} History.called(h: History, i: Invoc): bool { _called(h)[i] }
 function {:inline} History.returned(h: History, i: Invoc): bool { _returned(h)[i] }
-function {:inline} History.pending(h: History, i: Invoc): bool { History.called(h,i) && !History.returned(h,i) }
+function {:inline} History.pending(h: History, i: Invoc): bool { _called(h)[i] && !_returned(h)[i] }
+
+procedure {:yields} {:layer 0} {:refines "_call"}
+History.call(m: Method, args: ArgList) returns ({:linear "this"} this: Invoc);
+
+procedure {:yields} {:layer 0} {:refines "_return"}
+History.return({:linear "this"} this: Invoc);
+
+/**
+ * Internal members
+ */
+
+function _called(h: History): [Invoc] bool;
+function _returned(h: History): [Invoc] bool;
 
 procedure {:atomic} {:layer 1} _call(m: Method, args: ArgList)
   returns ({:linear "this"} this: Invoc)
@@ -39,10 +54,3 @@ procedure {:atomic} {:layer 1} _return({:linear "this"} this: Invoc)
   h := hh;
   assume _returned(h)[this];
 }
-
-procedure {:yields} {:layer 0} {:refines "_call"}
-History.call(m: Method, args: ArgList)
-  returns ({:linear "this"} this: Invoc);
-
-procedure {:yields} {:layer 0} {:refines "_return"}
-History.return({:linear "this"} this: Invoc);
