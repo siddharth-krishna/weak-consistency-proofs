@@ -24,6 +24,19 @@ function Map.restr(s: Set, k: int): Set;
 // TODO define this function, which may be useful for Map.ofSeq
 function Map.restrSeq(s: Seq, k: int): Seq;
 
+function Map.spec.put(vis: Set, lin: Seq, args: ArgList): bool {
+  true
+}
+
+function Map.spec.get(vis: Set, lin: Seq, args: ArgList, rets: ArgList): bool {
+  rets[0] == Map.ofVis(vis, lin)[args[0]]
+}
+
+function Map.spec.contains(vis: Set, lin: Seq, bound_k: int, args: ArgList, rets: ArgList): bool {
+   (Value.toBool(rets[0]) ==> Map.ofVis(vis, lin)[rets[1]] == args[0])
+   && (!Value.toBool(rets[0]) ==> (forall i: int :: 0 <= i && i < bound_k ==> Map.ofVis(vis, lin)[i] != args[0]))
+}
+
 // Union of disjoint keys means state comes from one of the two sets
 procedure {:layer 1} lemma_state_Set.union(k: int, K: int, s, t: Set);
   requires (forall n: Invoc :: Set.elem(n, s) ==> Map.key(n) < k);

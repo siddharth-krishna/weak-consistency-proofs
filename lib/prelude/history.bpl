@@ -24,7 +24,7 @@ procedure {:yields} {:layer 0} {:refines "_call"}
 History.call(m: Method, args: ArgList) returns ({:linear "this"} this: Invoc);
 
 procedure {:yields} {:layer 0} {:refines "_return"}
-History.return({:linear "this"} this: Invoc);
+History.return({:linear_in "this"} this: Invoc, rets: ArgList);
 
 /**
  * Internal declarations
@@ -38,8 +38,9 @@ procedure {:atomic} {:layer 1} _call(m: Method, args: ArgList)
   modifies h;
 {
   var hh: History;
-  assume m == Invoc.name(this);
-  assume args == Invoc.args(this);
+  var rets: ArgList;
+
+  assume Invoc.match(this, m, args, rets);
   assume (forall i: Invoc :: hb(i, this) ==> _returned(h)[i]);
   assume !_called(h)[this];
   assume !_returned(h)[this];
@@ -49,10 +50,18 @@ procedure {:atomic} {:layer 1} _call(m: Method, args: ArgList)
   assume _called(h)[this];
 }
 
-procedure {:atomic} {:layer 1} _return({:linear "this"} this: Invoc)
+procedure {:atomic} {:layer 1} _return({:linear_in "this"} this: Invoc, rets: ArgList)
   modifies h;
 {
   var hh: History;
+  var m: Method;
+  var args: ArgList;
+
+  assume Invoc.match(this, m, args, rets);
+
+  // XXX this is supposed to cover for a mysterious problem in Invoc.match
+  assume rets == Invoc.rets(this);
+
   assume _called(hh) == _called(h);
   assume _returned(hh) == _returned(h)[this := true];
   h := hh;

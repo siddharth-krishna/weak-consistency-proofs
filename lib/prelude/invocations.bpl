@@ -7,9 +7,19 @@ type Invoc;
 type Value = int;
 type ArgList = [int] Value;
 
+function Value.ofBool(b: bool): Value { if b then 1 else 0 }
+function Value.toBool(v: Value): bool { if v == 0 then false else true }
+
 function Invoc.name(i: Invoc): Method;
 function Invoc.args(i: Invoc): ArgList;
 function Invoc.rets(i: Invoc): ArgList;
+
+function {:inline} Invoc.match(i: Invoc, m: Method, args: ArgList, rets: ArgList): bool {
+  Invoc.name(i) == m
+  && Invoc.args(i) == args
+  // FIXME: why can’t we uncomment this??
+  // && Invoc.rets(i) == rets
+}
 
 // Sequences of invocations
 type Seq;

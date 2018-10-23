@@ -19,8 +19,9 @@ function {:inline} abstracts(conc: [int]int, abs: Map.State) : bool
 }
 
 // The invariants
-function {:inline} tableInv(table: [int]int, abs: Map.State, tabvis: [int]Set,
-                            lin: Seq, vis: [Invoc]Set, tabLen: int,
+function {:inline} tableInv(table: [int]int, tabLen: int, tabvis: [int]Set,
+                            abs: Map.State,
+                            lin: Seq, vis: Vis,
                             h: History) : bool
 {
   abstracts(table, abs)
@@ -64,7 +65,7 @@ procedure {:yields} {:layer 0} {:refines "readTable_spec"} readTable(k: int)
 
 // ---------- Introduction actions:
 
-procedure {:layer 1} intro_add_tabvis(k: int, n: Invoc)
+procedure {:layer 1} intro_add_tabvis(k: int, {:linear "this"} n: Invoc)
   // TODO why don't these follow from the body?
   ensures {:layer 1} tabvis == old(tabvis)[k := Set.add(old(tabvis)[k], n)];
   modifies tabvis;
@@ -86,14 +87,14 @@ procedure {:layer 1} intro_read_tabvis(k: int) returns (s: Set)
   s := tabvis[k];
 }
 
-procedure {:layer 1} intro_write_vis(n: Invoc, s: Set)
+procedure {:layer 1} intro_write_vis({:linear "this"} n: Invoc, s: Set)
   modifies vis;
   ensures {:layer 1} vis == old(vis)[n := s];
 {
   vis[n] := s;
 }
 
-procedure {:layer 1} {:inline 1} intro_writeLin(n: Invoc)
+procedure {:layer 1} {:inline 1} intro_writeLin({:linear "this"} n: Invoc)
   // To show that linearization is consistent with happens-before
   requires {:layer 1} (forall n1 : Invoc :: hb(n1, n) ==> Seq.elem(n1, lin));
   modifies lin;
@@ -107,36 +108,72 @@ procedure {:layer 1} {:inline 1} intro_writeAbs(k: int, v: int)
   abs[k] := v;
 }
 
-// ---------- The ADT methods
+/**
+ * ADT method specifications
+ */
 
-procedure {:atomic} {:layer 2} put_spec(args: ArgList)
+procedure {:atomic} {:layer 2} put_spec(args: ArgList) returns (rets: ArgList)
   modifies abs, lin, vis;
 {
   var {:linear "this"} this: Invoc;
   var my_vis: Set;
 
-  var k: int;
-  var v: int;
-
-  assume Map.put == Invoc.name(this);
-  assume args == Invoc.args(this);
-
-  k := args[0];
-  v := args[1];
+  assume Invoc.match(this, Map.put, args, rets);
 
   lin := Seq.append(lin, this);
   vis[this] := my_vis;
-  // Put is complete
-  assume my_vis == Set.ofSeq(lin);
+  assume Consistency.complete(lin, vis, this);
 
   // Put satisfies its functional spec
-  abs[k] := v;
+  // FIXME
+  abs[args[0]] := args[1];
+  // assume Map.spec.put(my_vis, lin, args);
 }
 
+procedure {:atomic} {:layer 2} get_spec(args: ArgList) returns (rets: ArgList)
+  modifies lin, vis;
+{
+  var {:linear "this"} this: Invoc;
+  var my_vis: Set;
+
+  assume Invoc.match(this, Map.get, args, rets);
+
+  lin := Seq.append(lin, this);
+  vis[this] := my_vis;
+  assume Consistency.complete(lin, vis, this);
+
+  // Get satisfies its functional spec
+  assume Map.spec.get(my_vis, lin, args, rets);
+}
+
+procedure {:atomic} {:layer 2} contains_spec(args: ArgList) returns (rets: ArgList)
+  modifies lin, vis;
+{
+  var {:linear "this"} this: Invoc;
+  var my_vis: Set;
+
+  assume Invoc.match(this, Map.contains, args, rets);
+
+  // FIXME this is a bit special...
+  assume tabLen - 1 == Map.key(this);
+
+  lin := Seq.append(lin, this);
+  vis[this] := my_vis;
+  assume Consistency.monotonic(lin, vis, this);
+
+  // Contains satisfies its functional spec
+  assume Map.spec.contains(my_vis, lin, tabLen, args, rets);
+}
+
+/**
+ * ADT method implementations
+ */
+
 procedure {:yields} {:layer 1} {:refines "put_spec"} put(args: ArgList)
-  requires {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen, h);
+  returns (rets: ArgList)
+  requires {:layer 1} tableInv(table, tabLen, tabvis, abs, lin, vis, h);
   requires {:layer 1} 0 <= args[0] && args[0] < tabLen;
-  ensures {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen, h);
+  ensures {:layer 1} tableInv(table, tabLen, tabvis, abs, lin, vis, h);
 {
   var {:linear "this"} this: Invoc;
   var {:layer 1} my_vis: Set;
@@ -144,9 +181,9 @@ procedure {:yields} {:layer 1} {:refines "put_spec"} put(args: ArgList)
   var k: int;
   var v: int;
 
-  yield; assert {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen, h);
+  yield; assert {:layer 1} tableInv(table, tabLen, tabvis, abs, lin, vis, h);
   call this := History.call(Map.put, args);
-  yield; assert {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen, h) && History.pending(h, this);
+  yield; assert {:layer 1} tableInv(table, tabLen, tabvis, abs, lin, vis, h) && History.pending(h, this);
 
   k := args[0];
   v := args[1];
@@ -159,111 +196,61 @@ procedure {:yields} {:layer 1} {:refines "put_spec"} put(args: ArgList)
   call intro_writeAbs(k, v);
   call intro_writeLin(this);
 
-  yield; assert {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen, h)
+  yield; assert {:layer 1} tableInv(table, tabLen, tabvis, abs, lin, vis, h)
     && History.pending(h, this) && Seq.elem(this, lin);
-  call History.return(this);
-  yield; assert {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen, h);
-}
-
-
-procedure {:atomic} {:layer 2} get_spec(args: ArgList) returns (v: int)
-  modifies lin, vis;
-{
-  var {:linear "this"} this: Invoc; var my_vis: Set;
-
-  var k: int;
-
-  assume Map.get == Invoc.name(this);
-  assume args == Invoc.args(this);
-
-  k := args[0];
-
-  lin := Seq.append(lin, this);
-  vis[this] := my_vis;
-  // Get is complete -- TODO make predicate
-  assume my_vis == Set.ofSeq(lin);
-
-  // Get satisfies its functional spec
-  v := abs[k];
+  call History.return(this, rets);
+  yield; assert {:layer 1} tableInv(table, tabLen, tabvis, abs, lin, vis, h);
 }
 
 procedure {:yields} {:layer 1} {:refines "get_spec"} get(args: ArgList)
-  returns (v: int)
-  requires {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen, h);
+  returns (rets: ArgList)
+  requires {:layer 1} tableInv(table, tabLen, tabvis, abs, lin, vis, h);
   requires {:layer 1} 0 <= args[0] && args[0] < tabLen;
-  ensures {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen, h);
+  ensures {:layer 1} tableInv(table, tabLen, tabvis, abs, lin, vis, h);
 {
   var {:linear "this"} this: Invoc;
   var {:layer 1} my_vis: Set;
 
   var k: int;
+  var v: int;
 
-  yield; assert {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen, h);
+  yield; assert {:layer 1} tableInv(table, tabLen, tabvis, abs, lin, vis, h);
   call this := History.call(Map.get, args);
-  yield; assert {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen, h) && History.pending(h, this);
+  yield; assert {:layer 1} tableInv(table, tabLen, tabvis, abs, lin, vis, h) && History.pending(h, this);
 
   k := args[0];
 
   call v := readTable(k);
+  rets[0] := v;
 
   call intro_add_tabvis(k, this);
   call my_vis := intro_read_tabvis_range(0, tabLen);
   call intro_write_vis(this, my_vis);
   call intro_writeLin(this);
 
-  yield; assert {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen, h)
+  yield; assert {:layer 1} tableInv(table, tabLen, tabvis, abs, lin, vis, h)
     && History.pending(h, this) && Seq.elem(this, lin);
-  call History.return(this);
-  yield; assert {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen, h);
-}
-
-
-function contains_func_spec(vis: Set, lin: Seq, witness_k: int,
-                            v: int, res: bool) : bool
-{
-   (res ==> Map.ofVis(vis, lin)[witness_k] == v)
-   && (!res ==> (forall i: int :: 0 <= i && i < tabLen ==> Map.ofVis(vis, lin)[i] != v))
-}
-
-procedure {:atomic} {:layer 2} contains_spec(args: ArgList)
-  returns (res: bool, witness_k: int)
-  modifies lin, vis;
-{
-  var {:linear "this"} this: Invoc;
-  var my_vis: Set;
-
-  var v: int;
-
-  assume Map.contains == Invoc.name(this);
-  assume args == Invoc.args(this);
-  assume tabLen - 1 == Map.key(this);
-
-  v := args[0];
-
-  lin := Seq.append(lin, this);
-  vis[this] := my_vis;
-  // Contains is monotonic
-  assume (forall j: Invoc :: hb(j, this) ==> Set.subset(vis[j], my_vis));
-
-  // Contains satisfies its functional spec
-  assume contains_func_spec(my_vis, lin, witness_k, v, res);
+  call History.return(this, rets);
+  yield; assert {:layer 1} tableInv(table, tabLen, tabvis, abs, lin, vis, h);
 }
 
 procedure {:yields} {:layer 1} {:refines "contains_spec"} contains(args: ArgList)
-  returns (res: bool, witness_k: int)
-  requires {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen, h);
-  ensures {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen, h);
+  returns (rets: ArgList)
+  requires {:layer 1} tableInv(table, tabLen, tabvis, abs, lin, vis, h);
+  ensures {:layer 1} tableInv(table, tabLen, tabvis, abs, lin, vis, h);
 {
   var k, tv: int;
   var {:linear "this"} this: Invoc;
   var {:layer 1} my_vis, my_vis1: Set;
 
   var v: int;
+  var res: bool;
+  var witness_k: int;
 
-  yield; assert {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen, h);
+  yield; assert {:layer 1} tableInv(table, tabLen, tabvis, abs, lin, vis, h);
   call this := History.call(Map.contains, args);
   assume tabLen - 1 == Map.key(this);
-  yield; assert {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen, h) && History.pending(h, this);
+  yield; assert {:layer 1} tableInv(table, tabLen, tabvis, abs, lin, vis, h) && History.pending(h, this);
 
   v := args[0];
 
@@ -272,7 +259,7 @@ procedure {:yields} {:layer 1} {:refines "contains_spec"} contains(args: ArgList
 
   while (k < tabLen)
     invariant {:layer 1} 0 <= k && k <= tabLen;
-    invariant {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen, h) && History.pending(h, this);
+    invariant {:layer 1} tableInv(table, tabLen, tabvis, abs, lin, vis, h) && History.pending(h, this);
     invariant {:layer 1} (forall i: int :: 0 <= i && i < k ==> Map.ofVis(my_vis, lin)[i] != v);
     invariant {:layer 1} Set.subset(my_vis, Set.ofSeq(lin));
     invariant {:layer 1} (forall n1 : Invoc :: Set.elem(n1, my_vis) ==> Set.elem(n1, tabvis[Map.key(n1)]));
@@ -305,14 +292,17 @@ procedure {:yields} {:layer 1} {:refines "contains_spec"} contains(args: ArgList
 
       res := true;
 
-      yield; assert {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen, h)
+      rets[0] := Value.ofBool(res);
+      rets[1] := witness_k;
+
+      yield; assert {:layer 1} tableInv(table, tabLen, tabvis, abs, lin, vis, h)
         && History.pending(h, this) && Seq.elem(this, lin);
-      call History.return(this);
-      yield; assert {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen, h);
+      call History.return(this, rets);
+      yield; assert {:layer 1} tableInv(table, tabLen, tabvis, abs, lin, vis, h);
       return;
     }
     k := k + 1;
-    yield; assert {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen, h) && History.pending(h, this)
+    yield; assert {:layer 1} tableInv(table, tabLen, tabvis, abs, lin, vis, h) && History.pending(h, this)
       && (forall i: int :: 0 <= i && i < k ==> Map.ofVis(my_vis, lin)[i] != v)
       && Set.subset(my_vis, Set.ofSeq(lin))
       && (forall n1 : Invoc :: Set.elem(n1, my_vis) ==> Set.elem(n1, tabvis[Map.key(n1)]))
@@ -320,7 +310,7 @@ procedure {:yields} {:layer 1} {:refines "contains_spec"} contains(args: ArgList
       assert {:layer 1} (forall n1, n2: Invoc :: hb(n1, this) && Set.elem(n2, vis[n1])
          && 0 <= Map.key(n2) && Map.key(n2) < k ==> Set.elem(n2, my_vis));
   }
-  yield; assert {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen, h) && History.pending(h, this)
+  yield; assert {:layer 1} tableInv(table, tabLen, tabvis, abs, lin, vis, h) && History.pending(h, this)
     && (forall i: int :: 0 <= i && i < tabLen ==> Map.ofVis(my_vis, lin)[i] != v)
     && (forall n1 : Invoc :: Set.elem(n1, my_vis) ==> Set.elem(n1, tabvis[Map.key(n1)]))
     && (forall n1 : Invoc :: Set.elem(n1, my_vis) ==> 0 <= Map.key(n1) && Map.key(n1) < tabLen)
@@ -336,9 +326,12 @@ procedure {:yields} {:layer 1} {:refines "contains_spec"} contains(args: ArgList
 
   res := false;
 
-  yield; assert {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen, h)
+  rets[0] := Value.ofBool(res);
+  rets[1] := witness_k;
+
+  yield; assert {:layer 1} tableInv(table, tabLen, tabvis, abs, lin, vis, h)
     && History.pending(h, this) && Seq.elem(this, lin);
-  call History.return(this);
-  yield; assert {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen, h);
+  call History.return(this, rets);
+  yield; assert {:layer 1} tableInv(table, tabLen, tabvis, abs, lin, vis, h);
   return;
 }
