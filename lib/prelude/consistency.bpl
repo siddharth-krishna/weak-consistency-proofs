@@ -3,8 +3,8 @@
  */
 
 // type Invoc;
-// type SeqInvoc;
-// type SetInvoc;
+// type Seq;
+// type Set;
 
 /**
  * Exported declarations
@@ -16,7 +16,7 @@ function hb(x: Invoc, y: Invoc): bool;
 axiom (forall n: Invoc :: !hb(n, n));
 
 // A shared global variable that builds the linearization
-var {:layer 1,2} lin: SeqInvoc;
+var {:layer 1,2} lin: Seq;
 
 // A map from invocations to the set of prior invocations visible to them
-var {:layer 1,2} vis: [Invoc] SetInvoc;
+var {:layer 1,2} vis: [Invoc] Set;
