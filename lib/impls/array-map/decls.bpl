@@ -90,5 +90,7 @@ procedure {:layer 1} intro_read_tabvis(k: int) returns (s: Set)
 procedure {:layer 1} {:inline 1} intro_writeAbs(k: int, v: int)
   modifies abs;
 {
+  // FIXME this breaks an abstraction boundary: the map ADT should dictate
+  // itself how it is updated.
   abs[k] := v;
 }
