@@ -18,11 +18,12 @@ var {:layer 0,1} called: [Invoc]bool;
 var {:layer 0,1} returned: [Invoc]bool;
 // Special call and return actions
 
-procedure {:atomic} {:layer 1} spec_call_spec(m: Method, k, v: int)
+procedure {:atomic} {:layer 1} spec_call_spec(m: Method, args: ArgList)
   returns ({:linear "this"} this: Invoc)
   modifies called, returned;
 {
-  assume m == invoc_m(this) && k == invoc_k(this) && v == invoc_v(this);
+  assume m == Invoc.name(this);
+  assume args == Invoc.args(this);
   // everything before this has returned
   assume (forall n1: Invoc :: hb(n1, this) ==> returned[n1]);
   // this has not been called or returned yet
@@ -31,7 +32,7 @@ procedure {:atomic} {:layer 1} spec_call_spec(m: Method, k, v: int)
 }
 
 procedure {:yields} {:layer 0} {:refines "spec_call_spec"}
-  spec_call(m: Method, k, v: int) returns ({:linear "this"} this: Invoc);
+  spec_call(m: Method, args: ArgList) returns ({:linear "this"} this: Invoc);
 
 procedure {:atomic} {:layer 1} spec_return_spec({:linear "this"} this: Invoc)
   modifies returned;

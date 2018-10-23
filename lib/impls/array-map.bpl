@@ -109,12 +109,21 @@ procedure {:layer 1} {:inline 1} intro_writeAbs(k: int, v: int)
 
 // ---------- The ADT methods
 
-procedure {:atomic} {:layer 2} put_spec(k: int, v: int)
+procedure {:atomic} {:layer 2} put_spec(args: ArgList)
   modifies abs, lin, vis;
 {
   var {:linear "this"} this: Invoc;
   var my_vis: SetInvoc;
-  assume put == invoc_m(this) && k == invoc_k(this) && v == invoc_v(this);
+
+  var k: int;
+  var v: int;
+
+  assume put == Invoc.name(this);
+  assume args == Invoc.args(this);
+
+  k := args[0];
+  v := args[1];
+
   lin := Seq_append(lin, this);
   vis[this] := my_vis;
   // Put is complete
@@ -124,16 +133,23 @@ procedure {:atomic} {:layer 2} put_spec(k: int, v: int)
   abs[k] := v;
 }
 
-procedure {:yields} {:layer 1} {:refines "put_spec"} put(k, v: int)
+procedure {:yields} {:layer 1} {:refines "put_spec"} put(args: ArgList)
   requires {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen, called, returned);
-  requires {:layer 1} 0 <= k && k < tabLen;
+  requires {:layer 1} 0 <= args[0] && args[0] < tabLen;
   ensures {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen, called, returned);
 {
   var {:linear "this"} this: Invoc;
   var {:layer 1} my_vis: SetInvoc;
+
+  var k: int;
+  var v: int;
+
   yield; assert {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen, called, returned);
-  call this := spec_call(put, k, v);
+  call this := spec_call(put, args);
   yield; assert {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen, called, returned) && inProgress(called, returned, this);
+
+  k := args[0];
+  v := args[1];
 
   call writeTable(k, v);
 
@@ -150,11 +166,18 @@ procedure {:yields} {:layer 1} {:refines "put_spec"} put(k, v: int)
 }
 
 
-procedure {:atomic} {:layer 2} get_spec(k: int) returns (v: int)
+procedure {:atomic} {:layer 2} get_spec(args: ArgList) returns (v: int)
   modifies lin, vis;
 {
   var {:linear "this"} this: Invoc; var my_vis: SetInvoc;
-  assume get == invoc_m(this) && k == invoc_k(this);
+
+  var k: int;
+
+  assume get == Invoc.name(this);
+  assume args == Invoc.args(this);
+
+  k := args[0];
+
   lin := Seq_append(lin, this);
   vis[this] := my_vis;
   // Get is complete -- TODO make predicate
@@ -164,17 +187,22 @@ procedure {:atomic} {:layer 2} get_spec(k: int) returns (v: int)
   v := abs[k];
 }
 
-procedure {:yields} {:layer 1} {:refines "get_spec"} get(k: int)
+procedure {:yields} {:layer 1} {:refines "get_spec"} get(args: ArgList)
   returns (v: int)
   requires {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen, called, returned);
-  requires {:layer 1} 0 <= k && k < tabLen;
+  requires {:layer 1} 0 <= args[0] && args[0] < tabLen;
   ensures {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen, called, returned);
 {
   var {:linear "this"} this: Invoc;
   var {:layer 1} my_vis: SetInvoc;
+
+  var k: int;
+
   yield; assert {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen, called, returned);
-  call this := spec_call(get, k, v);
+  call this := spec_call(get, args);
   yield; assert {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen, called, returned) && inProgress(called, returned, this);
+
+  k := args[0];
 
   call v := readTable(k);
 
@@ -197,13 +225,21 @@ function contains_func_spec(vis: SetInvoc, lin: SeqInvoc, witness_k: int,
    && (!res ==> (forall i: int :: 0 <= i && i < tabLen ==> state(vis, lin)[i] != v))
 }
 
-procedure {:atomic} {:layer 2} contains_spec(v: int)
+procedure {:atomic} {:layer 2} contains_spec(args: ArgList)
   returns (res: bool, witness_k: int)
   modifies lin, vis;
 {
   var {:linear "this"} this: Invoc;
   var my_vis: SetInvoc;
-  assume contains == invoc_m(this) && v == invoc_v(this);
+
+  var v: int;
+
+  assume contains == Invoc.name(this);
+  assume args == Invoc.args(this);
+  assume tabLen - 1 == invoc_k(this);
+
+  v := args[0];
+
   lin := Seq_append(lin, this);
   vis[this] := my_vis;
   // Contains is monotonic
@@ -213,7 +249,7 @@ procedure {:atomic} {:layer 2} contains_spec(v: int)
   assume contains_func_spec(my_vis, lin, witness_k, v, res);
 }
 
-procedure {:yields} {:layer 1} {:refines "contains_spec"} contains(v: int)
+procedure {:yields} {:layer 1} {:refines "contains_spec"} contains(args: ArgList)
   returns (res: bool, witness_k: int)
   requires {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen, called, returned);
   ensures {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen, called, returned);
@@ -221,9 +257,15 @@ procedure {:yields} {:layer 1} {:refines "contains_spec"} contains(v: int)
   var k, tv: int;
   var {:linear "this"} this: Invoc;
   var {:layer 1} my_vis, my_vis1: SetInvoc;
+
+  var v: int;
+
   yield; assert {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen, called, returned);
-  call this := spec_call(contains, tabLen-1, v);
+  call this := spec_call(contains, args);
+  assume tabLen - 1 == invoc_k(this);
   yield; assert {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen, called, returned) && inProgress(called, returned, this);
+
+  v := args[0];
 
   k := 0;
   my_vis := Set_empty;

@@ -2,9 +2,13 @@
 
 const unique get, put, contains: Method;
 
-function invoc_m(n: Invoc) : Method;
 function invoc_k(n: Invoc) : int;
 function invoc_v(n: Invoc) : int;
+
+axiom (forall n: Invoc :: Invoc.name(n) == put ==> invoc_k(n) == Invoc.args(n)[0]);
+axiom (forall n: Invoc :: Invoc.name(n) == put ==> invoc_v(n) == Invoc.args(n)[1]);
+axiom (forall n: Invoc :: Invoc.name(n) == get ==> invoc_k(n) == Invoc.args(n)[0]);
+axiom (forall n: Invoc :: Invoc.name(n) == contains ==> invoc_v(n) == Invoc.args(n)[0]);
 
 // A function to restrict a SetInvoc to invocations involving key k
 function restr(s: SetInvoc, k: int) returns (t: SetInvoc);
@@ -34,12 +38,12 @@ function state(vis: SetInvoc, lin: SeqInvoc) returns (m: AbsState);
 // The effect of appending an invocation on key k on state of k
 axiom (forall s1, s2: SetInvoc, q1, q2: SeqInvoc, n: Invoc ::
        q2 == Seq_append(q1, n) && s2 == Set_add(s1, n)
-       ==> (invoc_m(n) == put ==> state(s2, q2)[invoc_k(n)] == invoc_v(n)));
+       ==> (Invoc.name(n) == put ==> state(s2, q2)[invoc_k(n)] == invoc_v(n)));
 
 // Appending a get/contains invocation does not change state
 axiom (forall s1, s2: SetInvoc, q1, q2: SeqInvoc, n: Invoc, k: int ::
        q2 == Seq_append(q1, n) && s2 == Set_add(s1, n)
-       && (invoc_m(n) == get || invoc_m(n) == contains)
+       && (Invoc.name(n) == get || Invoc.name(n) == contains)
        ==> state(s2, q2)[k] == state(s1, q1)[k]);
 
 // The effect of appending an invocation on key k on state with unchanged vis

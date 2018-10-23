@@ -4,6 +4,13 @@ type Method;
 
 type Invoc;
 
+type Value = int;
+type ArgList = [int] Value;
+
+function Invoc.name(i: Invoc): Method;
+function Invoc.args(i: Invoc): ArgList;
+function Invoc.rets(i: Invoc): ArgList;
+
 // Boilerplate stuff for linear variables
 function {:builtin "MapConst"} MapConstBool(bool) : [Invoc]bool;
 function {:inline} {:linear "this"} TidCollector(x: Invoc) : [Invoc]bool
