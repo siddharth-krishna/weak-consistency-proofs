@@ -244,7 +244,7 @@ procedure {:yields} {:layer 1} {:refines "contains_spec"} contains(v: int)
     call tv := readTable(k);
 
     call my_vis1 := intro_read_tabvis(k);
-    call lemma_state_Set_union(k, my_vis, my_vis1);
+    call lemma_state_Set_union(k, tabLen, my_vis, my_vis1);
     my_vis := Set_union(my_vis, my_vis1);
 
     if (tv == v) {
@@ -254,7 +254,7 @@ procedure {:yields} {:layer 1} {:refines "contains_spec"} contains(v: int)
                           hb(n1, this) && Set_elem(n2, vis[n1])
                           && 0 <= invoc_k(n2) && invoc_k(n2) < k+1
                           ==> Set_elem(n2, my_vis));
-      call lemma_state_Set_union(k+1, my_vis, my_vis1);
+      call lemma_state_Set_union(k+1, tabLen, my_vis, my_vis1);
       my_vis := Set_union(my_vis, my_vis1);
       call intro_write_vis(this, my_vis);
       call intro_add_tabvis(tabLen-1, this);

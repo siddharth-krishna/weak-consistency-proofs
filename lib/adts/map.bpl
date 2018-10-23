@@ -60,10 +60,10 @@ axiom (forall s0, s1, t: SetInvoc, k: int ::
 );
 
 // Union of disjoint keys means state comes from one of the two sets
-procedure {:layer 1} lemma_state_Set_union(k: int, s, t: SetInvoc);
+procedure {:layer 1} lemma_state_Set_union(k: int, K: int, s, t: SetInvoc);
   requires (forall n: Invoc :: Set_elem(n, s) ==> invoc_k(n) < k);
   requires (forall n: Invoc :: Set_elem(n, t) ==> k <= invoc_k(n));
   ensures (forall i: int :: 0 <= i && i < k ==>
     state(Set_union(s, t), lin)[i] == state(s, lin)[i]);
-  ensures (forall i: int :: k <= i && i < tabLen ==>
+  ensures (forall i: int :: k <= i && i < K ==>
     state(Set_union(s, t), lin)[i] == state(t, lin)[i]);
