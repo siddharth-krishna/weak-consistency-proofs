@@ -1,7 +1,7 @@
 // ---------- Logical and concrete shared state
 
 // Abstract state of ADT
-var {:layer 1,2} abs: AbsState;
+var {:layer 1,2} abs: Map.State;
 
 // Visibility per location of concrete state
 var {:layer 1,1} tabvis: [int]Set;
@@ -13,22 +13,22 @@ const tabLen: int;
 axiom 0 < tabLen;
 
 
-function {:inline} abstracts(conc: [int]int, abs: AbsState) : bool
+function {:inline} abstracts(conc: [int]int, abs: Map.State) : bool
 {
   (forall i: int :: 0 <= i && i < tabLen ==> conc[i] == abs[i])
 }
 
 // The invariants
-function {:inline} tableInv(table: [int]int, abs: AbsState, tabvis: [int]Set,
+function {:inline} tableInv(table: [int]int, abs: Map.State, tabvis: [int]Set,
                             lin: Seq, vis: [Invoc]Set, tabLen: int,
                             h: History) : bool
 {
   abstracts(table, abs)
   && Set.unionAll(tabvis, 0, tabLen) == Set.ofSeq(lin)
-  && (forall i: int :: 0 <= i && i < tabLen ==> state(tabvis[i], lin)[i] == abs[i])
+  && (forall i: int :: 0 <= i && i < tabLen ==> Map.ofVis(tabvis[i], lin)[i] == abs[i])
   && (forall i: int :: 0 <= i && i < tabLen ==>
-      state(tabvis[i], lin)[i] == state(restr(Set.ofSeq(lin), i), lin)[i])
-  && (forall i: int :: 0 <= i && i < tabLen ==> Set.subset(restr(Set.ofSeq(lin), i), tabvis[i]))
+      Map.ofVis(tabvis[i], lin)[i] == Map.ofVis(Map.restr(Set.ofSeq(lin), i), lin)[i])
+  && (forall i: int :: 0 <= i && i < tabLen ==> Set.subset(Map.restr(Set.ofSeq(lin), i), tabvis[i]))
   && (forall i: int :: 0 <= i && i < tabLen ==> Set.subset(tabvis[i], Set.ofSeq(lin)))
   && (forall i: int, n: Invoc :: 0 <= i && i < tabLen && Set.elem(n, tabvis[i])
       ==> Map.key(n) == i)
@@ -118,7 +118,7 @@ procedure {:atomic} {:layer 2} put_spec(args: ArgList)
   var k: int;
   var v: int;
 
-  assume put == Invoc.name(this);
+  assume Map.put == Invoc.name(this);
   assume args == Invoc.args(this);
 
   k := args[0];
@@ -145,7 +145,7 @@ procedure {:yields} {:layer 1} {:refines "put_spec"} put(args: ArgList)
   var v: int;
 
   yield; assert {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen, h);
-  call this := History.call(put, args);
+  call this := History.call(Map.put, args);
   yield; assert {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen, h) && History.pending(h, this);
 
   k := args[0];
@@ -173,7 +173,7 @@ procedure {:atomic} {:layer 2} get_spec(args: ArgList) returns (v: int)
 
   var k: int;
 
-  assume get == Invoc.name(this);
+  assume Map.get == Invoc.name(this);
   assume args == Invoc.args(this);
 
   k := args[0];
@@ -199,7 +199,7 @@ procedure {:yields} {:layer 1} {:refines "get_spec"} get(args: ArgList)
   var k: int;
 
   yield; assert {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen, h);
-  call this := History.call(get, args);
+  call this := History.call(Map.get, args);
   yield; assert {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen, h) && History.pending(h, this);
 
   k := args[0];
@@ -221,8 +221,8 @@ procedure {:yields} {:layer 1} {:refines "get_spec"} get(args: ArgList)
 function contains_func_spec(vis: Set, lin: Seq, witness_k: int,
                             v: int, res: bool) : bool
 {
-   (res ==> state(vis, lin)[witness_k] == v)
-   && (!res ==> (forall i: int :: 0 <= i && i < tabLen ==> state(vis, lin)[i] != v))
+   (res ==> Map.ofVis(vis, lin)[witness_k] == v)
+   && (!res ==> (forall i: int :: 0 <= i && i < tabLen ==> Map.ofVis(vis, lin)[i] != v))
 }
 
 procedure {:atomic} {:layer 2} contains_spec(args: ArgList)
@@ -234,7 +234,7 @@ procedure {:atomic} {:layer 2} contains_spec(args: ArgList)
 
   var v: int;
 
-  assume contains == Invoc.name(this);
+  assume Map.contains == Invoc.name(this);
   assume args == Invoc.args(this);
   assume tabLen - 1 == Map.key(this);
 
@@ -261,7 +261,7 @@ procedure {:yields} {:layer 1} {:refines "contains_spec"} contains(args: ArgList
   var v: int;
 
   yield; assert {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen, h);
-  call this := History.call(contains, args);
+  call this := History.call(Map.contains, args);
   assume tabLen - 1 == Map.key(this);
   yield; assert {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen, h) && History.pending(h, this);
 
@@ -273,7 +273,7 @@ procedure {:yields} {:layer 1} {:refines "contains_spec"} contains(args: ArgList
   while (k < tabLen)
     invariant {:layer 1} 0 <= k && k <= tabLen;
     invariant {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen, h) && History.pending(h, this);
-    invariant {:layer 1} (forall i: int :: 0 <= i && i < k ==> state(my_vis, lin)[i] != v);
+    invariant {:layer 1} (forall i: int :: 0 <= i && i < k ==> Map.ofVis(my_vis, lin)[i] != v);
     invariant {:layer 1} Set.subset(my_vis, Set.ofSeq(lin));
     invariant {:layer 1} (forall n1 : Invoc :: Set.elem(n1, my_vis) ==> Set.elem(n1, tabvis[Map.key(n1)]));
     invariant {:layer 1} (forall n1 : Invoc :: Set.elem(n1, my_vis) ==> 0 <= Map.key(n1) && Map.key(n1) < k);
@@ -313,7 +313,7 @@ procedure {:yields} {:layer 1} {:refines "contains_spec"} contains(args: ArgList
     }
     k := k + 1;
     yield; assert {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen, h) && History.pending(h, this)
-      && (forall i: int :: 0 <= i && i < k ==> state(my_vis, lin)[i] != v)
+      && (forall i: int :: 0 <= i && i < k ==> Map.ofVis(my_vis, lin)[i] != v)
       && Set.subset(my_vis, Set.ofSeq(lin))
       && (forall n1 : Invoc :: Set.elem(n1, my_vis) ==> Set.elem(n1, tabvis[Map.key(n1)]))
       && (forall n1 : Invoc :: Set.elem(n1, my_vis) ==> 0 <= Map.key(n1) && Map.key(n1) < k);
@@ -321,7 +321,7 @@ procedure {:yields} {:layer 1} {:refines "contains_spec"} contains(args: ArgList
          && 0 <= Map.key(n2) && Map.key(n2) < k ==> Set.elem(n2, my_vis));
   }
   yield; assert {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen, h) && History.pending(h, this)
-    && (forall i: int :: 0 <= i && i < tabLen ==> state(my_vis, lin)[i] != v)
+    && (forall i: int :: 0 <= i && i < tabLen ==> Map.ofVis(my_vis, lin)[i] != v)
     && (forall n1 : Invoc :: Set.elem(n1, my_vis) ==> Set.elem(n1, tabvis[Map.key(n1)]))
     && (forall n1 : Invoc :: Set.elem(n1, my_vis) ==> 0 <= Map.key(n1) && Map.key(n1) < tabLen)
     && (forall n1, n2: Invoc :: hb(n1, this) && Set.elem(n2, vis[n1])
