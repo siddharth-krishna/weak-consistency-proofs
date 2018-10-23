@@ -1,0 +1,48 @@
+// ---------- Representation of execution and linearization
+
+// hb(x, y) : x happens-before y.
+// We assume there exists such a function, given by the client program
+function hb(x: Invoc, y: Invoc) : bool;
+axiom (forall n: Invoc :: !hb(n, n));
+
+// A shared global variable that builds the linearization
+var {:layer 1,2} lin: SeqInvoc;
+
+// A map from invocations to the set of prior invocations visible to them
+var {:layer 1,2} vis: [Invoc]SetInvoc;
+
+// The set of invocations that have been called
+var {:layer 0,1} called: [Invoc]bool;
+
+// The set of invocations that have returned
+var {:layer 0,1} returned: [Invoc]bool;
+// Special call and return actions
+
+procedure {:atomic} {:layer 1} spec_call_spec(m: Method, k, v: int)
+  returns ({:linear "this"} this: Invoc)
+  modifies called, returned;
+{
+  assume m == invoc_m(this) && k == invoc_k(this) && v == invoc_v(this);
+  // everything before this has returned
+  assume (forall n1: Invoc :: hb(n1, this) ==> returned[n1]);
+  // this has not been called or returned yet
+  assume (!called[this] && !returned[this]);
+  called[this] := true;
+}
+
+procedure {:yields} {:layer 0} {:refines "spec_call_spec"}
+  spec_call(m: Method, k, v: int) returns ({:linear "this"} this: Invoc);
+
+procedure {:atomic} {:layer 1} spec_return_spec({:linear "this"} this: Invoc)
+  modifies returned;
+{
+  returned[this] := true;
+}
+
+procedure {:yields} {:layer 0} {:refines "spec_return_spec"}
+  spec_return({:linear "this"} this: Invoc);
+
+function {:inline} inProgress(called: [Invoc]bool, returned: [Invoc]bool, this: Invoc) : bool
+{
+  called[this] && !returned[this]
+}
