@@ -18,7 +18,7 @@ prelude:
 $(adts): %: lib/adts/%.bpl
 	@echo Checking ADT: $@
 	@echo ---
-	boogie lib/prelude/*.bpl $<
+	@boogie lib/prelude/*.bpl $<
 	@echo ---
 
 .SECONDEXPANSION:

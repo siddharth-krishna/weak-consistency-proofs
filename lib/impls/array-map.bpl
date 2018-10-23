@@ -21,7 +21,7 @@ function {:inline} abstracts(conc: [int]int, abs: AbsState) : bool
 // The invariants
 function {:inline} tableInv(table: [int]int, abs: AbsState, tabvis: [int]SetInvoc,
                             lin: SeqInvoc, vis: [Invoc]SetInvoc, tabLen: int,
-                            called: [Invoc]bool, returned: [Invoc]bool) : bool
+                            h: History) : bool
 {
   abstracts(table, abs)
   && unionRange(tabvis, 0, tabLen) == Set_ofSeq(lin)
@@ -33,12 +33,12 @@ function {:inline} tableInv(table: [int]int, abs: AbsState, tabvis: [int]SetInvo
   && (forall i: int, n: Invoc :: 0 <= i && i < tabLen && Set_elem(n, tabvis[i])
       ==> invoc_k(n) == i)
   // Used to infer that invocations don't modify vis after they've returned
-  && (forall n1, n2 : Invoc :: called[n1] && hb(n2, n1) ==> returned[n2])
+  && (forall n1, n2 : Invoc :: History.called(h,n1) && hb(n2, n1) ==> History.returned(h,n2))
   // Sanity conditions on vis sets
   && (forall n1, n2 : Invoc :: Set_elem(n2, vis[n1]) ==> Set_elem(n2, tabvis[invoc_k(n2)]))
   && (forall n1, n2 : Invoc :: Set_elem(n2, vis[n1]) ==> 0 <= invoc_k(n2) && invoc_k(n2) < tabLen)
   // To establish precondition of intro_writeLin
-  && (forall n: Invoc :: returned[n] ==> Seq_elem(n, lin))
+  && (forall n: Invoc :: History.returned(h,n) ==> Seq_elem(n, lin))
 }
 
 // ---------- Primitives/helpers for modifying global state
@@ -134,9 +134,9 @@ procedure {:atomic} {:layer 2} put_spec(args: ArgList)
 }
 
 procedure {:yields} {:layer 1} {:refines "put_spec"} put(args: ArgList)
-  requires {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen, called, returned);
+  requires {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen, h);
   requires {:layer 1} 0 <= args[0] && args[0] < tabLen;
-  ensures {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen, called, returned);
+  ensures {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen, h);
 {
   var {:linear "this"} this: Invoc;
   var {:layer 1} my_vis: SetInvoc;
@@ -144,9 +144,9 @@ procedure {:yields} {:layer 1} {:refines "put_spec"} put(args: ArgList)
   var k: int;
   var v: int;
 
-  yield; assert {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen, called, returned);
-  call this := spec_call(put, args);
-  yield; assert {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen, called, returned) && pending(called, returned, this);
+  yield; assert {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen, h);
+  call this := History.call(put, args);
+  yield; assert {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen, h) && History.pending(h, this);
 
   k := args[0];
   v := args[1];
@@ -159,10 +159,10 @@ procedure {:yields} {:layer 1} {:refines "put_spec"} put(args: ArgList)
   call intro_writeAbs(k, v);
   call intro_writeLin(this);
 
-  yield; assert {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen, called, returned)
-    && pending(called, returned, this) && Seq_elem(this, lin);
-  call spec_return(this);
-  yield; assert {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen, called, returned);
+  yield; assert {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen, h)
+    && History.pending(h, this) && Seq_elem(this, lin);
+  call History.return(this);
+  yield; assert {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen, h);
 }
 
 
@@ -189,18 +189,18 @@ procedure {:atomic} {:layer 2} get_spec(args: ArgList) returns (v: int)
 
 procedure {:yields} {:layer 1} {:refines "get_spec"} get(args: ArgList)
   returns (v: int)
-  requires {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen, called, returned);
+  requires {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen, h);
   requires {:layer 1} 0 <= args[0] && args[0] < tabLen;
-  ensures {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen, called, returned);
+  ensures {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen, h);
 {
   var {:linear "this"} this: Invoc;
   var {:layer 1} my_vis: SetInvoc;
 
   var k: int;
 
-  yield; assert {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen, called, returned);
-  call this := spec_call(get, args);
-  yield; assert {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen, called, returned) && pending(called, returned, this);
+  yield; assert {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen, h);
+  call this := History.call(get, args);
+  yield; assert {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen, h) && History.pending(h, this);
 
   k := args[0];
 
@@ -211,10 +211,10 @@ procedure {:yields} {:layer 1} {:refines "get_spec"} get(args: ArgList)
   call intro_write_vis(this, my_vis);
   call intro_writeLin(this);
 
-  yield; assert {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen, called, returned)
-    && pending(called, returned, this) && Seq_elem(this, lin);
-  call spec_return(this);
-  yield; assert {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen, called, returned);
+  yield; assert {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen, h)
+    && History.pending(h, this) && Seq_elem(this, lin);
+  call History.return(this);
+  yield; assert {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen, h);
 }
 
 
@@ -251,8 +251,8 @@ procedure {:atomic} {:layer 2} contains_spec(args: ArgList)
 
 procedure {:yields} {:layer 1} {:refines "contains_spec"} contains(args: ArgList)
   returns (res: bool, witness_k: int)
-  requires {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen, called, returned);
-  ensures {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen, called, returned);
+  requires {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen, h);
+  ensures {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen, h);
 {
   var k, tv: int;
   var {:linear "this"} this: Invoc;
@@ -260,10 +260,10 @@ procedure {:yields} {:layer 1} {:refines "contains_spec"} contains(args: ArgList
 
   var v: int;
 
-  yield; assert {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen, called, returned);
-  call this := spec_call(contains, args);
+  yield; assert {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen, h);
+  call this := History.call(contains, args);
   assume tabLen - 1 == invoc_k(this);
-  yield; assert {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen, called, returned) && pending(called, returned, this);
+  yield; assert {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen, h) && History.pending(h, this);
 
   v := args[0];
 
@@ -272,7 +272,7 @@ procedure {:yields} {:layer 1} {:refines "contains_spec"} contains(args: ArgList
 
   while (k < tabLen)
     invariant {:layer 1} 0 <= k && k <= tabLen;
-    invariant {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen, called, returned) && pending(called, returned, this);
+    invariant {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen, h) && History.pending(h, this);
     invariant {:layer 1} (forall i: int :: 0 <= i && i < k ==> state(my_vis, lin)[i] != v);
     invariant {:layer 1} Set_subset(my_vis, Set_ofSeq(lin));
     invariant {:layer 1} (forall n1 : Invoc :: Set_elem(n1, my_vis) ==> Set_elem(n1, tabvis[invoc_k(n1)]));
@@ -305,14 +305,14 @@ procedure {:yields} {:layer 1} {:refines "contains_spec"} contains(args: ArgList
 
       res := true;
 
-      yield; assert {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen, called, returned)
-        && pending(called, returned, this) && Seq_elem(this, lin);
-      call spec_return(this);
-      yield; assert {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen, called, returned);
+      yield; assert {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen, h)
+        && History.pending(h, this) && Seq_elem(this, lin);
+      call History.return(this);
+      yield; assert {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen, h);
       return;
     }
     k := k + 1;
-    yield; assert {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen, called, returned) && pending(called, returned, this)
+    yield; assert {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen, h) && History.pending(h, this)
       && (forall i: int :: 0 <= i && i < k ==> state(my_vis, lin)[i] != v)
       && Set_subset(my_vis, Set_ofSeq(lin))
       && (forall n1 : Invoc :: Set_elem(n1, my_vis) ==> Set_elem(n1, tabvis[invoc_k(n1)]))
@@ -320,7 +320,7 @@ procedure {:yields} {:layer 1} {:refines "contains_spec"} contains(args: ArgList
       assert {:layer 1} (forall n1, n2: Invoc :: hb(n1, this) && Set_elem(n2, vis[n1])
          && 0 <= invoc_k(n2) && invoc_k(n2) < k ==> Set_elem(n2, my_vis));
   }
-  yield; assert {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen, called, returned) && pending(called, returned, this)
+  yield; assert {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen, h) && History.pending(h, this)
     && (forall i: int :: 0 <= i && i < tabLen ==> state(my_vis, lin)[i] != v)
     && (forall n1 : Invoc :: Set_elem(n1, my_vis) ==> Set_elem(n1, tabvis[invoc_k(n1)]))
     && (forall n1 : Invoc :: Set_elem(n1, my_vis) ==> 0 <= invoc_k(n1) && invoc_k(n1) < tabLen)
@@ -336,9 +336,9 @@ procedure {:yields} {:layer 1} {:refines "contains_spec"} contains(args: ArgList
 
   res := false;
 
-  yield; assert {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen, called, returned)
-    && pending(called, returned, this) && Seq_elem(this, lin);
-  call spec_return(this);
-  yield; assert {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen, called, returned);
+  yield; assert {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen, h)
+    && History.pending(h, this) && Seq_elem(this, lin);
+  call History.return(this);
+  yield; assert {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen, h);
   return;
 }

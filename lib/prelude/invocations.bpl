@@ -13,7 +13,7 @@ function Invoc.rets(i: Invoc): ArgList;
 
 // Boilerplate stuff for linear variables
 function {:builtin "MapConst"} MapConstBool(bool) : [Invoc]bool;
-function {:inline} {:linear "this"} TidCollector(x: Invoc) : [Invoc]bool
+function {:inline} {:linear "this"} InvocCollector(x: Invoc) : [Invoc]bool
 {
   MapConstBool(false)[x := true]
 }

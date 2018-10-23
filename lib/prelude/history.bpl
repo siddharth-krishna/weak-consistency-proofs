@@ -5,39 +5,44 @@
 function hb(x: Invoc, y: Invoc) : bool;
 axiom (forall n: Invoc :: !hb(n, n));
 
-// The set of invocations that have been called
-var {:layer 0,1} called: [Invoc]bool;
+type History;
+var {:layer 0,1} h: History;
 
-// The set of invocations that have returned
-var {:layer 0,1} returned: [Invoc]bool;
-// Special call and return actions
+function _called(h: History): [Invoc] bool;
+function _returned(h: History): [Invoc] bool;
+function {:inline} History.called(h: History, i: Invoc): bool { _called(h)[i] }
+function {:inline} History.returned(h: History, i: Invoc): bool { _returned(h)[i] }
+function {:inline} History.pending(h: History, i: Invoc): bool { History.called(h,i) && !History.returned(h,i) }
 
-procedure {:atomic} {:layer 1} spec_call_spec(m: Method, args: ArgList)
+procedure {:atomic} {:layer 1} _call(m: Method, args: ArgList)
   returns ({:linear "this"} this: Invoc)
-  modifies called, returned;
+  modifies h;
 {
+  var hh: History;
   assume m == Invoc.name(this);
   assume args == Invoc.args(this);
-  // everything before this has returned
-  assume (forall n1: Invoc :: hb(n1, this) ==> returned[n1]);
-  // this has not been called or returned yet
-  assume (!called[this] && !returned[this]);
-  called[this] := true;
+  assume (forall i: Invoc :: hb(i, this) ==> _returned(h)[i]);
+  assume !_called(h)[this];
+  assume !_returned(h)[this];
+  assume _called(hh) == _called(h)[this := true];
+  assume _returned(hh) == _returned(h);
+  h := hh;
+  assume _called(h)[this];
 }
 
-procedure {:yields} {:layer 0} {:refines "spec_call_spec"}
-  spec_call(m: Method, args: ArgList) returns ({:linear "this"} this: Invoc);
-
-procedure {:atomic} {:layer 1} spec_return_spec({:linear "this"} this: Invoc)
-  modifies returned;
+procedure {:atomic} {:layer 1} _return({:linear "this"} this: Invoc)
+  modifies h;
 {
-  returned[this] := true;
+  var hh: History;
+  assume _called(hh) == _called(h);
+  assume _returned(hh) == _returned(h)[this := true];
+  h := hh;
+  assume _returned(h)[this];
 }
 
-procedure {:yields} {:layer 0} {:refines "spec_return_spec"}
-  spec_return({:linear "this"} this: Invoc);
+procedure {:yields} {:layer 0} {:refines "_call"}
+History.call(m: Method, args: ArgList)
+  returns ({:linear "this"} this: Invoc);
 
-function {:inline} pending(called: [Invoc]bool, returned: [Invoc]bool, this: Invoc) : bool
-{
-  called[this] && !returned[this]
-}
+procedure {:yields} {:layer 0} {:refines "_return"}
+History.return({:linear "this"} this: Invoc);
