@@ -3,21 +3,17 @@ adts = $(patsubst lib/adts/%.bpl,%,$(wildcard lib/adts/*.bpl))
 impls = $(patsubst lib/impls/%.bpl,%,$(wildcard lib/impls/*.bpl))
 prelude = $(wildcard lib/prelude/*.bpl)
 
-.PHONY: all checks prelude-checks adt-checks $(adts)
+.PHONY: all checks prelude $(adts) $(impls)
 
-all: checks $(impls)
+all: prelude $(adts) $(impls)
 
-checks: prelude-checks adt-checks
-
-prelude-checks:
+prelude:
 	@echo Checking prelude
 	@echo ---
 	@boogie lib/prelude/invocations.bpl
 	@echo ---
 	@boogie lib/prelude/*.bpl
 	@echo ---
-
-adt-checks: $(adts)
 
 $(adts): %: lib/adts/%.bpl
 	@echo Checking ADT: $@
