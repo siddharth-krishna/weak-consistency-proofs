@@ -49,9 +49,9 @@ procedure {:yields} {:layer 1} {:refines "contains_spec"} contains(args: ArgList
                           ==> Set.elem(n2, my_vis));
       call lemma_state_Set.union(k+1, tabLen, my_vis, my_vis1);
       my_vis := Set.union(my_vis, my_vis1);
-      call intro_write_vis(this, my_vis);
       call intro_add_tabvis(tabLen-1, this);
-      call intro_writeLin(this);
+      call Consistency.linPoint(this);
+      call Consistency.setVis(this, my_vis);
       witness_k := k;
 
       res := true;
@@ -83,9 +83,9 @@ procedure {:yields} {:layer 1} {:refines "contains_spec"} contains(args: ArgList
                          ==> Set.elem(n2, my_vis));
 
   // Linearization point
-  call intro_write_vis(this, my_vis);
   call intro_add_tabvis(tabLen-1, this);
-  call intro_writeLin(this);
+  call Consistency.linPoint(this);
+  call Consistency.setVis(this, my_vis);
   witness_k := k;
 
   res := false;

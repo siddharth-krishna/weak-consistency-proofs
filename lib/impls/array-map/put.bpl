@@ -21,9 +21,9 @@ procedure {:yields} {:layer 1} {:refines "put_spec"} put(args: ArgList)
 
   call intro_add_tabvis(k, this);
   call my_vis := intro_read_tabvis_range(0, tabLen);
-  call intro_write_vis(this, my_vis);
   call intro_writeAbs(k, v);
-  call intro_writeLin(this);
+  call Consistency.linPoint(this);
+  call Consistency.setVis(this, my_vis);
 
   yield; assert {:layer 1} tableInv(table, tabLen, tabvis, abs, lin, vis, h)
     && History.pending(h, this) && Seq.elem(this, lin);

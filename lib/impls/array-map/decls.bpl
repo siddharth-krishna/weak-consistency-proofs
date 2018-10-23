@@ -87,21 +87,6 @@ procedure {:layer 1} intro_read_tabvis(k: int) returns (s: Set)
   s := tabvis[k];
 }
 
-procedure {:layer 1} intro_write_vis({:linear "this"} n: Invoc, s: Set)
-  modifies vis;
-  ensures {:layer 1} vis == old(vis)[n := s];
-{
-  vis[n] := s;
-}
-
-procedure {:layer 1} {:inline 1} intro_writeLin({:linear "this"} n: Invoc)
-  // To show that linearization is consistent with happens-before
-  requires {:layer 1} (forall n1 : Invoc :: hb(n1, n) ==> Seq.elem(n1, lin));
-  modifies lin;
-{
-  lin := Seq.append(lin, n);
-}
-
 procedure {:layer 1} {:inline 1} intro_writeAbs(k: int, v: int)
   modifies abs;
 {

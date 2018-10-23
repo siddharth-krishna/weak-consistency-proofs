@@ -30,3 +30,18 @@ function {:inline} Consistency.complete(lin: Seq, vis: Vis, this: Invoc): bool {
 function {:inline} Consistency.monotonic(lin: Seq, vis: Vis, this: Invoc): bool {
   (forall i: Invoc :: hb(i, this) ==> Set.subset(vis[i], vis[this]))
 }
+
+procedure {:layer 1} Consistency.setVis({:linear "this"} n: Invoc, s: Set)
+  modifies vis;
+  ensures {:layer 1} vis == old(vis)[n := s];
+{
+  vis[n] := s;
+}
+
+procedure {:layer 1} {:inline 1} Consistency.linPoint({:linear "this"} n: Invoc)
+  // To show that linearization is consistent with happens-before
+  requires {:layer 1} (forall n1 : Invoc :: hb(n1, n) ==> Seq.elem(n1, lin));
+  modifies lin;
+{
+  lin := Seq.append(lin, n);
+}
