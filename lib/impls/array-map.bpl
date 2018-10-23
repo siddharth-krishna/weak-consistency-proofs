@@ -203,7 +203,7 @@ procedure {:atomic} {:layer 2} contains_spec(v: int)
 {
   var {:linear "this"} this: Invoc;
   var my_vis: SetInvoc;
-  assume contains == invoc_m(this) && tabLen-1 == invoc_k(this) && v == invoc_v(this);
+  assume contains == invoc_m(this) && v == invoc_v(this);
   lin := Seq_append(lin, this);
   vis[this] := my_vis;
   // Contains is monotonic
