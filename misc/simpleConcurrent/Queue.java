@@ -49,6 +49,15 @@ public class Queue <E> {
         }
     }
 
+    public int size() {
+        int count = 0;
+        for (Node<E> p = head.get(); p != null; ) {
+            ++count;
+            p = p.next.get();
+        }
+        return count;
+    }
+
     private static class Node <E> {
         public final E item;
         public AtomicReference<Node<E>> next;

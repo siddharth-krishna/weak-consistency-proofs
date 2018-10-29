@@ -21,6 +21,14 @@
       "readonly": false,
       "trusted": true,
       "visibility": "complete"
+    },
+    {
+      "name": "size",
+      "parameters": [],
+      "void": false,
+      "readonly": true,
+      "trusted": true,
+      "visibility": "monotonic"
     }
   ]
 }
