@@ -1,0 +1,26 @@
+{
+  "class": "simpleConcurrent.Queue",
+  "harnessParameters": {
+        "invocations": 3
+  },
+  "methods": [
+    {
+      "name": "offer",
+      "parameters": [
+        {"type": "java.lang.Object"}
+      ],
+      "void": false,
+      "readonly": false,
+      "trusted": true,
+      "visibility": "complete"
+    },
+    {
+      "name": "poll",
+      "parameters": [],
+      "void": false,
+      "readonly": false,
+      "trusted": true,
+      "visibility": "complete"
+    }
+  ]
+}
