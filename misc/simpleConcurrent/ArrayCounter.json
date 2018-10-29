@@ -7,6 +7,14 @@
       "void": false,
       "readonly": true,
       "trusted": true,
+      "visibility": "monotonic"
+    },
+    {
+      "name": "decr",
+      "parameters": [],
+      "void": true,
+      "readonly": false,
+      "trusted": true,
       "visibility": "complete"
     },
     {
