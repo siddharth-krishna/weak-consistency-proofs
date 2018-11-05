@@ -157,10 +157,13 @@ type Loc;
 const null: Loc;
 
 type Heap;
-function {:linear "Node"} dom(Heap): [Loc]bool;
+function dom(Heap): [Loc]bool;
 function next(Heap): [Loc]Loc;
 function data(Heap): [Loc]int;
 function {:builtin "MapConst"} MapConstLocBool(bool) : [Loc]bool;
+
+function {:inline} {:linear "FP"} FPCollector(FP: [Loc]bool) : [Loc]bool
+{ FP }
 
 function EmptyLmap(): (Heap);
 axiom (dom(EmptyLmap()) == MapConstLocBool(false));
@@ -178,18 +181,20 @@ axiom (forall h: Heap, l: Loc :: dom(Remove(h, l)) == dom(h)[l:=false] && next(R
 var {:layer 1,1} keyvis: [int]SetInvoc;
 
 // Concrete state of implementation
-var {:linear "Node"} {:layer 0,1} heap: Heap;
+var {:layer 0,1} heap: Heap;
+var {:linear "FP"} queue_FP: [Loc]bool;
 var {:layer 0,1} head: Loc;
 var {:layer 0,1} tail: Loc;
 
 
 // The invariants
-function {:inline} Inv(heap: Heap, head: Loc, tail: Loc,
+function {:inline} Inv(heap: Heap, head: Loc, tail: Loc, queue_FP: [Loc]bool,
                             lin: SeqInvoc, vis: [Invoc]SetInvoc,
                             called: [Invoc]bool, returned: [Invoc]bool) : bool
 {
   Between(next(heap), head, head, null) && Between(next(heap), head, tail, null)
-    && Subset(BetweenSet(next(heap), head, null), Union(Singleton(null), dom(heap)))
+    && BetweenSet(next(heap), head, null) == queue_FP
+    && Subset(queue_FP, Union(Singleton(null), dom(heap)))
     && tail != null
 }
 
@@ -219,7 +224,7 @@ procedure {:atomic} {:layer 1} cas_next_spec(x, x_old, x_new: Loc)
   returns (res: bool)
   modifies heap;
 {
-  assert dom(heap)[x];
+  assert dom(heap)[x] && queue_FP[x];
   if (next(heap)[x] == x_old) {
     heap := Add(heap, x, x_new);
     res := true;
@@ -230,13 +235,16 @@ procedure {:atomic} {:layer 1} cas_next_spec(x, x_old, x_new: Loc)
 procedure {:yields} {:layer 0} {:refines "cas_next_spec"}
   cas_next(x, x_old, x_new: Loc) returns (res: bool);
 
-procedure {:atomic} {:layer 1} alloc_spec(x: Loc)
+procedure {:atomic} {:layer 1} alloc_spec()
+  returns (x: Loc, {:linear "FP"} x_FP: [Loc]bool)
   modifies heap;
 {
-  assert !dom(heap)[x];
+  assume !dom(heap)[x];
   heap := Add(heap, x, null);
+  assume x_FP == MapConstLocBool(false)[x := true];
 }
-procedure {:yields} {:layer 0} {:refines "alloc_spec"} alloc(x: Loc);
+procedure {:yields} {:layer 0} {:refines "alloc_spec"}
+alloc() returns (x: Loc, {:linear "FP"} x_FP: [Loc]bool);
 
 procedure {:atomic} {:layer 1} cas_tail_spec(t_old, t_new: Loc)
   returns (res: bool)
@@ -297,8 +305,7 @@ procedure {:yields} {:layer 0} {:refines "spec_return_spec"}
 
 // ---------- The ADT methods
 
-procedure {:atomic} {:layer 2} offer_spec(v: int,
-    x: Loc)
+procedure {:atomic} {:layer 2} offer_spec(v: int)
   returns (res: bool)
   modifies lin, vis;
 {
@@ -316,76 +323,68 @@ procedure {:atomic} {:layer 2} offer_spec(v: int,
   assume res == true; // TODO adt_spec(vis, lin);
 }
 
-// Maybe just have Set<Node> linear, and keep global Q_FP set to track footprint of queue?
-// Locally keep a linear set {x} to enforce that no one else knows x?
-
-procedure {:yields} {:layer 1} {:refines "offer_spec"} offer(v: int,
-    x: Loc)
+procedure {:yields} {:layer 1} {:refines "offer_spec"}
+  offer(v: int)
   returns (res: bool)
-  requires {:layer 1} Inv(heap, head, tail, lin, vis, called, returned);
-  // Assume x_Heap has node at location x with value v
-  //  requires {:layer 1} dom(x_Heap)[x]; // && data(x_Heap)[x] == v;
-  // TODO from linearity?
-  requires {:layer 1} !Between(next(heap), head, x, null) && !dom(heap)[x];
-  ensures {:layer 1} Inv(heap, head, tail, lin, vis, called, returned);
+  requires {:layer 1} Inv(heap, head, tail, queue_FP, lin, vis, called, returned);
+  ensures {:layer 1} Inv(heap, head, tail, queue_FP, lin, vis, called, returned);
 {
   var t, tn: Loc;
   var b: bool;
-  yield; assert {:layer 1} Inv(heap, head, tail, lin, vis, called, returned)
-                             &&  !Between(next(heap), head, x, null)
-                             && !dom(heap)[x]; // This isn't stable someone else may call alloc(x)
+  var x: Loc; var {:linear "FP"} x_FP: [Loc]bool;
+  yield; assert {:layer 1} Inv(heap, head, tail, queue_FP, lin, vis, called, returned);
 
-  call alloc(x);
+  call x, x_FP := alloc();
 
-  yield; assert {:layer 1} Inv(heap, head, tail, lin, vis, called, returned);
-  assert {:layer 1}  !Between(next(heap), head, x, null); // unstable
+  yield; assert {:layer 1} Inv(heap, head, tail, queue_FP, lin, vis, called, returned);
+  assert {:layer 1} !Between(next(heap), head, x, null);
   assert {:layer 1} dom(heap)[x];
-  assert {:layer 1} next(heap)[x] == null;  // unstable
+  assert {:layer 1} next(heap)[x] == null;
 
   while (true)
-    invariant {:layer 1} Inv(heap, head, tail, lin, vis, called, returned);
+    invariant {:layer 1} Inv(heap, head, tail, queue_FP, lin, vis, called, returned);
     invariant {:layer 1} !Between(next(heap), head, x, null);
     invariant {:layer 1} dom(heap)[x] && next(heap)[x] == null;
   {
     call t := read_tail();
 
-    yield; assert {:layer 1} Inv(heap, head, tail, lin, vis, called, returned)
-                               &&  !Between(next(heap), head, x, null)
-                               && dom(heap)[x] && next(heap)[x] == null
-                               && dom(heap)[t] && t != x;
+    yield; assert {:layer 1} Inv(heap, head, tail, queue_FP, lin, vis, called, returned);
+    assert {:layer 1} !Between(next(heap), head, x, null);
+    assert {:layer 1} dom(heap)[x] && next(heap)[x] == null;
+    assert {:layer 1} dom(heap)[t] && t != x;
+    assert {:layer 1} Between(next(heap), head, t, null);
 
     call tn := read_next(t);
 
     if (tn == null) {
-      yield; assert {:layer 1} Inv(heap, head, tail, lin, vis, called, returned)
-                                 &&  !Between(next(heap), head, x, null)
-                                 && dom(heap)[x] && next(heap)[x] == null
-                                 && dom(heap)[t] && t != x
-                                 && Between(next(heap), head, tn, null);
+      yield; assert {:layer 1} Inv(heap, head, tail, queue_FP, lin, vis, called, returned);
+      assert {:layer 1} !Between(next(heap), head, x, null);
+      assert {:layer 1} dom(heap)[x] && next(heap)[x] == null;
+      assert {:layer 1} dom(heap)[t] && t != x;
+      assert {:layer 1} Between(next(heap), head, t, null);
+      assert {:layer 1} Between(next(heap), head, tn, null);
 
       call b := cas_next(t, tn, x);
       if (b) {
         res := true;
   
-        yield; assert {:layer 1} Inv(heap, head, tail, lin, vis, called, returned);
+        yield; assert {:layer 1} Inv(heap, head, tail, queue_FP, lin, vis, called, returned);  // Not true
         return;
       }
     } else {
-      yield; assert {:layer 1} Inv(heap, head, tail, lin, vis, called, returned)
-                                 &&  !Between(next(heap), head, x, null)
-                                 && dom(heap)[x] && next(heap)[x] == null
-                                 && Between(next(heap), head, tn, null);
-      call b:= cas_tail(t, tn);
-      assert {:layer 1} BetweenSet(next(heap), head, null)[tail];
+      yield; assert {:layer 1} Inv(heap, head, tail, queue_FP, lin, vis, called, returned);
+      assert {:layer 1} !Between(next(heap), head, x, null);
+      assert {:layer 1} dom(heap)[x] && next(heap)[x] == null;
+      assert {:layer 1} Between(next(heap), head, tn, null);
 
+      call b:= cas_tail(t, tn);
     }
-    yield; assert {:layer 1} Inv(heap, head, tail, lin, vis, called, returned)
-                               &&  !Between(next(heap), head, x, null)
-                               && dom(heap)[x];
+    yield; assert {:layer 1} Inv(heap, head, tail, queue_FP, lin, vis, called, returned);
+    assert {:layer 1} !Between(next(heap), head, x, null);
+    assert {:layer 1} dom(heap)[x] && next(heap)[x] == null;
   }
   yield;
 }
-
 
 
 // ---------- Reachability, between, and associated theories
