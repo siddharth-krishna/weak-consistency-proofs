@@ -198,24 +198,6 @@ axiom(forall x: Loc :: {known(x)} known(x));
 axiom(forall f: [Loc]Loc :: {knownF(f)} knownF(f));
 
  
-function Equal([Loc]bool, [Loc]bool) returns (bool);
-function Subset([Loc]bool, [Loc]bool) returns (bool);
-
-function Empty() returns ([Loc]bool);
-function Singleton(Loc) returns ([Loc]bool);
-function Union([Loc]bool, [Loc]bool) returns ([Loc]bool);
-
-axiom(forall x:Loc :: !Empty()[x]);
-
-axiom(forall x:Loc, y:Loc :: {Singleton(y)[x]} Singleton(y)[x] <==> x == y);
-axiom(forall y:Loc :: {Singleton(y)} Singleton(y)[y]);
-
-axiom(forall x:Loc, S:[Loc]bool, T:[Loc]bool :: {Union(S,T)[x]}{Union(S,T),S[x]}{Union(S,T),T[x]} Union(S,T)[x] <==> S[x] || T[x]);
-
-axiom(forall S:[Loc]bool, T:[Loc]bool :: {Equal(S,T)} Equal(S,T) <==> Subset(S,T) && Subset(T,S));
-axiom(forall x:Loc, S:[Loc]bool, T:[Loc]bool :: {S[x],Subset(S,T)}{T[x],Subset(S,T)} S[x] && Subset(S,T) ==> T[x]);
-axiom(forall S:[Loc]bool, T:[Loc]bool :: {Subset(S,T)} Subset(S,T) || (exists x:Loc :: S[x] && !T[x]));
-
 ////////////////////
 // Between predicate
 ////////////////////
@@ -279,9 +261,21 @@ axiom(forall f: [Loc]Loc, u:Loc, x: Loc :: {knownF(f), known(x), known(u)} Betwe
 axiom(forall f: [Loc]Loc, x: Loc, y: Loc, z: Loc :: {knownF(f), known(x), known(y), known(z)} Avoiding(f, x, y, z) <==> (Between(f, x, y, z) || (Between(f, x, y, y) && !Between(f, x, z, z))));
 axiom(forall f: [Loc]Loc, x: Loc, y: Loc, z: Loc :: {knownF(f), known(x), known(y), known(z)} Between(f, x, y, z) <==> (Avoiding(f, x, y, z) && Avoiding(f, x, z, z)));
 
+// BWr: grasshopper's update axiom
+axiom (forall f: [Loc]Loc, x: Loc, y: Loc, z: Loc, u: Loc, v: Loc :: {f[u := v], known(x), known(y), known(z)}
+        Between(f[u := v], x, y, z) <==>
+          (Between(f, x, y, z) && Avoiding(f, x, z, u))
+          || (u != z && Avoiding(f, x, u, z) && Avoiding(f, v, z, u)
+            && (Between(f, x, y, u) || Between(f, v, y, z))));
+
+
+/* Not sure if this is the same update as the grasshopper axiom BWr above:
 // update
 axiom(forall f: [Loc]Loc, u: Loc, v: Loc, x: Loc, p: Loc, q: Loc :: {knownF(f), known(x), known(u), known(v), known(p), known(q)} Avoiding(f[p := q], u, v, x) <==> ((Avoiding(f, u, v, p) && Avoiding(f, u, v, x)) || (Avoiding(f, u, p, x) && p != x && Avoiding(f, q, v, p) && Avoiding(f, q, v, x))));
+*/
 
+/* Why are these needed?
 axiom (forall f: [Loc]Loc, p: Loc, q: Loc, u: Loc, w: Loc :: {knownF(f), known(p), known(q), known(u), known(w)} Avoiding(f, u, w, p) ==> Equal(BetweenSet(f[p := q], u, w), BetweenSet(f, u, w)));
 axiom (forall f: [Loc]Loc, p: Loc, q: Loc, u: Loc, w: Loc :: {knownF(f), known(p), known(q), known(u), known(w)} p != w && Avoiding(f, u, p, w) && Avoiding(f, q, w, p) ==> Equal(BetweenSet(f[p := q], u, w), Union(BetweenSet(f, u, p), BetweenSet(f, q, w))));
 axiom (forall f: [Loc]Loc, p: Loc, q: Loc, u: Loc, w: Loc :: {knownF(f), known(p), known(q), known(u), known(w)} Avoiding(f, u, w, p) || (p != w && Avoiding(f, u, p, w) && Avoiding(f, q, w, p)) || Equal(BetweenSet(f[p := q], u, w), Empty()));
+ */
