@@ -57,6 +57,7 @@ procedure {:inline 1} read_head() returns (h: Loc)
 }
 
 procedure {:inline 1} read_next(x: Loc) returns (y: Loc)
+  requires dom(heap)[x];
   ensures known(y);
 {
   y := next(heap)[x];
@@ -122,9 +123,7 @@ procedure offer(v: int, x: Loc)
   assume !Between(next(heap), head, x, null) && !dom(heap)[x];
 
   assert known(x);
-  assert Inv(heap, head, tail);
   call alloc(x);
-  assert Inv(heap, head, tail);
 
   while (true)
     invariant Inv(heap, head, tail);
