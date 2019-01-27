@@ -3,6 +3,8 @@
 // based on the Michael-Scott queue.
 // Assumes GC, so does not free dequeued nodes.
 // Also uses the simplified heap encoding from CIVL's Treiber example.
+//
+// Use options -noinfer -typeEncoding:m -useArrayTheory
 // ----------------------------------------
 
 type Loc;
