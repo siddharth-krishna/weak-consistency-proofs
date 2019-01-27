@@ -153,7 +153,7 @@ procedure {:atomic} {:layer 1} AtomicReadtail() returns (v:Loc)
 
 procedure {:yields} {:layer 0} {:refines "AtomicReadtail"} Readtail() returns (v:Loc);
 
-procedure {:right} {:layer 1} AtomicLoad(i:Loc) returns (v:Loc)
+procedure {:atomic} {:layer 1} AtomicLoad(i:Loc) returns (v:Loc)
 {
   assert dom(queue)[i] || Used[i];
   if (dom(queue)[i]) {
@@ -168,13 +168,15 @@ procedure {:both} {:layer 1} AtomicStore({:linear_in "Node"} l_in:Heap, i:Loc, v
 
 procedure {:yields} {:layer 0} {:refines "AtomicStore"} Store({:linear_in "Node"} l_in:Heap, i:Loc, v:Loc) returns ({:linear "Node"} l_out:Heap);
 
-/*
-procedure {:atomic} {:layer 1} AtomicTransferToqueue(oldVal: Loc, newVal: Loc, {:linear_in "Node"} l_in:Heap) returns (r: bool, {:linear "Node"} l_out:Heap)
-modifies tail, queue;
+
+procedure {:atomic} {:layer 1} AtomicTransferToqueue(t: Loc, oldVal: Loc,
+    newVal: Loc, {:linear_in "Node"} l_in:Heap)
+  returns (r: bool, {:linear "Node"} l_out:Heap)
+  modifies queue;
 {
   assert dom(l_in)[newVal];
-  if (oldVal == tail) {
-    tail := newVal;
+  if (next(queue)[t] == oldVal) {
+    queue := Add(queue, t, newVal);
     l_out := EmptyHeap();
     queue := Add(queue, newVal, next(l_in)[newVal]);
     r := true;
@@ -184,8 +186,10 @@ modifies tail, queue;
   }
 }
 
-procedure {:yields} {:layer 0} {:refines "AtomicTransferToqueue"} TransferToqueue(oldVal: Loc, newVal: Loc, {:linear_in "Node"} l_in:Heap) returns (r: bool, {:linear "Node"} l_out:Heap);
- */
+procedure {:yields} {:layer 0} {:refines "AtomicTransferToqueue"}
+  TransferToqueue(t: Loc, oldVal: Loc, newVal: Loc,
+                  {:linear_in "Node"} l_in:Heap)
+  returns (r: bool, {:linear "Node"} l_out:Heap);
 
 procedure {:atomic} {:layer 1} AtomicTransferFromqueue(oldVal: Loc, newVal: Loc) returns (r: bool)
   modifies head, Used, queue;
@@ -241,6 +245,12 @@ ensures {:layer 1} Inv(queue, head, tail);
 
     if (h != t) {
       call x := Load(h);
+      yield;
+      assert {:layer 1} Inv(queue, head, tail);
+      assert {:layer 1} h == head || Used[h];
+      assert {:layer 1} (h == head && h != t ==> x == next(queue)[head]);
+      assert {:layer 1} (h == head && h != t ==> head != tail);
+
       call g := TransferFromqueue(h, x);
       if (g) {
         break;
@@ -253,20 +263,24 @@ ensures {:layer 1} Inv(queue, head, tail);
   assert {:expand} {:layer 1} Inv(queue, head, tail);
 }
 
-/*
-procedure {:atomic} {:layer 2} atomic_push(x: Loc, {:linear_in "Node"} x_Heap: Heap)
-modifies queue, tail;
+
+procedure {:atomic} {:layer 2} atomic_push(x: Loc,
+ {:linear_in "Node"} x_Heap: Heap)
+ modifies queue, tail;
 {
-  queue := Add(queue, x, tail);
-  tail := x;
+  if (next(queue)[tail] == null) {
+    queue := Add(queue, tail, x);
+    queue := Add(queue, x, null);
+  }
+  // tail := x;
 }
 
 procedure {:yields} {:layer 1} {:refines "atomic_push"} push(x: Loc, {:linear_in "Node"} x_Heap: Heap)
-requires {:layer 1} dom(x_Heap)[x];
-requires {:layer 1} Inv(queue, head, tail);
-ensures {:layer 1} Inv(queue, head, tail);
+  requires {:layer 1} dom(x_Heap)[x] && next(x_Heap)[x] == null;
+  requires {:layer 1} Inv(queue, head, tail);
+  ensures {:layer 1} Inv(queue, head, tail);
 {
-  var t: Loc;
+  var t, tn: Loc;
   var g: bool;
   var {:linear "Node"} t_Heap: Heap;
 
@@ -275,17 +289,33 @@ ensures {:layer 1} Inv(queue, head, tail);
   t_Heap := x_Heap;
   while (true)
     invariant {:layer 1} dom(t_Heap) == dom(x_Heap);
+    invariant {:layer 1} next(t_Heap)[x] == null; // TODO needed?
     invariant {:layer 1} Inv(queue, head, tail);
   {
     call t := Readtail();
     yield;
     assert {:layer 1} Inv(queue, head, tail);
     assert {:layer 1} dom(t_Heap) == dom(x_Heap);
-    call t_Heap := Store(t_Heap, x, t);
-    call g, t_Heap := TransferToqueue(t, x, t_Heap);
-    if (g) {
-      break;
-    }
+    assert {:layer 1} next(t_Heap)[x] == null;
+    assert {:layer 1} t != null && (Between(next(queue), head, t, null)
+      || Used[t]);
+    assert {:layer 1} next(queue)[t] == null ==> t == tail;
+
+    call tn := Load(t);
+    yield;
+    assert {:layer 1} Inv(queue, head, tail);
+    assert {:layer 1} dom(t_Heap) == dom(x_Heap);
+    assert {:layer 1} next(t_Heap)[x] == null;
+    assert {:layer 1} t != null && (Between(next(queue), head, t, null)
+      || Used[t]);
+    assert {:layer 1} next(queue)[t] == null ==> t == tail;
+
+    if (tn == null) {
+      call g, t_Heap := TransferToqueue(t, tn, x, t_Heap);
+      if (g) {
+        break;
+      }
+    } // TODO else cas tail
     yield;
     assert {:layer 1} dom(t_Heap) == dom(x_Heap);
     assert {:layer 1} Inv(queue, head, tail);
@@ -293,5 +323,3 @@ ensures {:layer 1} Inv(queue, head, tail);
   yield;
   assert {:expand} {:layer 1} Inv(queue, head, tail);
 }
-
- */

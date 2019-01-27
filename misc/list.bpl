@@ -27,7 +27,7 @@ var tail: Loc;
 function {:inline} Inv(heap: Heap, head: Loc, tail: Loc) : bool
 {
   BetweenSet(next(heap), head, null)[head] && BetweenSet(next(heap), head, null)[tail]
-    && (forall l: Loc :: known(l) ==> (Between(next(heap), head, l, null) ==> l == null || dom(heap)[l]))
+    && (forall l: Loc :: {known(l)} known(l) ==> (Between(next(heap), head, l, null) ==> l == null || dom(heap)[l]))
     //    && Subset(BetweenSet(next(heap), head, null), Union(Singleton(null), dom(heap)))
     && tail != null
     && known(head) && known(tail) && known(null) && knownF(next(heap))
