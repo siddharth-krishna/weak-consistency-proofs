@@ -31,6 +31,25 @@ function {:inline} NodeSetCollector(x: [Loc]bool) : [Loc]bool
 
 // ---------- Reachability, between, and associated theories
 
+function Equal([Loc]bool, [Loc]bool) returns (bool);
+function Subset([Loc]bool, [Loc]bool) returns (bool);
+
+function Empty() returns ([Loc]bool);
+function Singleton(Loc) returns ([Loc]bool);
+function Union([Loc]bool, [Loc]bool) returns ([Loc]bool);
+
+axiom(forall x:Loc :: !Empty()[x]);
+
+axiom(forall x:Loc, y:Loc :: {Singleton(y)[x]} Singleton(y)[x] <==> x == y);
+axiom(forall y:Loc :: {Singleton(y)} Singleton(y)[y]);
+
+axiom(forall x:Loc, S:[Loc]bool, T:[Loc]bool :: {Union(S,T)[x]}{Union(S,T),S[x]}{Union(S,T),T[x]} Union(S,T)[x] <==> S[x] || T[x]);
+
+axiom(forall S:[Loc]bool, T:[Loc]bool :: {Equal(S,T)} Equal(S,T) <==> Subset(S,T) && Subset(T,S));
+axiom(forall x:Loc, S:[Loc]bool, T:[Loc]bool :: {S[x],Subset(S,T)}{T[x],Subset(S,T)} S[x] && Subset(S,T) ==> T[x]);
+axiom(forall S:[Loc]bool, T:[Loc]bool :: {Subset(S,T)} Subset(S,T) || (exists x:Loc :: known(x) && S[x] && !T[x]));
+
+
 // Predicates used to control the triggers on the below axioms
 function known(x: Loc) : bool;
 function knownF(f: [Loc]Loc) : bool;
@@ -43,6 +62,20 @@ axiom(forall f: [Loc]Loc :: {knownF(f)} knownF(f));
 ////////////////////
 function Between(f: [Loc]Loc, x: Loc, y: Loc, z: Loc) returns (bool);
 function Avoiding(f: [Loc]Loc, x: Loc, y: Loc, z: Loc) returns (bool);
+
+
+//////////////////////////
+// Between set constructor
+//////////////////////////
+function BetweenSet(f: [Loc]Loc, x: Loc, z: Loc) returns ([Loc]bool);
+
+////////////////////////////////////////////////////
+// axioms relating Between and BetweenSet
+////////////////////////////////////////////////////
+axiom(forall f: [Loc]Loc, x: Loc, y: Loc, z: Loc :: {BetweenSet(f, x, z)[y]} BetweenSet(f, x, z)[y] <==> Between(f, x, y, z));
+axiom(forall f: [Loc]Loc, x: Loc, y: Loc, z: Loc :: {Between(f, x, y, z), BetweenSet(f, x, z)} Between(f, x, y, z) ==> BetweenSet(f, x, z)[y]);
+axiom(forall f: [Loc]Loc, x: Loc, z: Loc :: {BetweenSet(f, x, z)} Between(f, x, x, x));
+axiom(forall f: [Loc]Loc, x: Loc, z: Loc :: {BetweenSet(f, x, z)} Between(f, z, z, z));
 
 
 //////////////////////////
@@ -108,9 +141,12 @@ function {:inline} Inv(queue: Heap, head: Loc, tail: Loc) : (bool)
 {
   Between(next(queue), head, head, null)
     && Between(next(queue), head, tail, null)
-    // && Subset(BtwnSet(next(queue), head, null),
-            //  Union(Singleton(null), dom(queue)))
+    && Equal(BetweenSet(next(queue), head, null),
+             Union(Singleton(null), dom(queue)))
+    // && (forall l: Loc :: {Between(next(queue), head, l, null)} known(l) ==>
+    //     (Between(next(queue), head, l, null) <==> l == null || dom(queue)[l]))
     && tail != null
+    && known(head) && known(tail) && known(null) && knownF(next(queue))
 }
 
 
@@ -123,9 +159,13 @@ procedure {:inline 2} TransferToqueue(t: Loc, oldVal: Loc,
 {
   assert dom(l_in)[newVal];
   if (next(queue)[t] == oldVal) {
+    assert knownF(next(queue));
     queue := Add(queue, t, newVal);
+    assert known(head) && known(tail) && known(t) && known(oldVal) && known(newVal)
+     && known(next(l_in)[newVal]) && knownF(next(queue));
     l_out := EmptyHeap();
     queue := Add(queue, newVal, next(l_in)[newVal]);
+    assert knownF(next(queue));
     r := true;
   } else {
     l_out := l_in;
@@ -133,36 +173,49 @@ procedure {:inline 2} TransferToqueue(t: Loc, oldVal: Loc,
   }
 }
 
+procedure {:inline 2} TransferFromqueue(oldVal: Loc, newVal: Loc) returns (r: bool)
+  modifies head, Used, queue;
+{
+  if (oldVal == head) {
+    head := newVal;
+    Used[oldVal] := true;
+    queue := Remove(queue, oldVal);
+    assert known(oldVal) && known(head) && knownF(next(queue));
+    r := true;
+  }
+  else {
+    r := false;
+  }
+}
+
+
 // ---------- queue methods:
 
-procedure test1(head: Loc, tail: Loc, c: Loc, x1: Loc)
-  requires Between(next(queue), head, head, null)
-    && Between(next(queue), head, tail, null)
-    && tail != null;
-  requires dom(queue)[x1] && next(queue)[x1] == null;
-  requires x1 != tail;  // IMP!
-  requires Between(next(queue), head, c, null);
-  ensures Between(next(queue), head, head, null)
-    && Between(next(queue), head, tail, null)
-    && tail != null;
-  ensures Between(next(queue), head, c, null);
+procedure test1(x: Loc, t: Loc, tn: Loc, t_Heap: Heap, x_Heap: Heap)
+  requires Inv(queue, head, tail);
+  requires dom(x_Heap)[x] && next(x_Heap)[x] == null;
+  requires known(x) && known(t) && known(tn) && knownF(next(queue)) && knownF(next(t_Heap));
+  requires dom(t_Heap) == dom(x_Heap);
+  requires next(t_Heap)[x] == null;
+  requires t != null && (Between(next(queue), head, t, null)
+      || Used[t]);
+  requires next(queue)[t] == null ==> t == tail;
+
+  ensures {:expand} Inv(queue, head, tail);
   modifies queue;
 {
-  var old_q: Heap;
-  if (next(queue)[tail] == null) {
-    assert known(head) && known(tail) && known(null) && known(x1) && known(c)
-      && known(next(queue)[x1])
-      && knownF(next(queue));
-
-    old_q := queue;
-    queue := Add(queue, tail, x1);
-
-    assert known(head) && known(tail) && known(null) && known(x1)
-      && knownF(next(queue));
-
-    assert Between(next(queue), head, tail, null);
-  } else {
+  var g: bool;
+  var out_heap: Heap;
+  assume tn == null;
+  call g, out_heap := TransferToqueue(t, tn, x, t_Heap);
+  if (!g) {
     assume false;
+  } else {
+  assert known(head) && known(tail) && known(null) && knownF(next(queue));
+  assert Between(next(queue), head, head, null);
+  assert Between(next(queue), head, tail, null);
+  assert Equal(BetweenSet(next(queue), head, null),
+             Union(Singleton(null), dom(queue)));
   }
 }
 
