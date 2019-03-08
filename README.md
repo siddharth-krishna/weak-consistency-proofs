@@ -5,6 +5,7 @@ Provably correct implementations of weakly-consistent data structures.
 ## Dependencies
 
 * [Boogie]
+* [Z3](https://github.com/Z3Prover/z3/). **Important**: need Z3 version 4.5.0, otherwise CIVL blows up!
 
 ## Usage
 
