@@ -169,6 +169,7 @@ procedure test1(head: Loc, tail: Loc, c: Loc, x1: Loc)
 procedure test(x: Loc, x_Heap: Heap, c: Loc)
   requires Inv(queue, head, tail);
   requires dom(x_Heap)[x] && next(x_Heap)[x] == null;
+  requires !Between(next(queue), head, x, null); // From linearity
   requires Between(next(queue), head, c, null);
   ensures Between(next(queue), head, tail, null);  // TODO this fails
   ensures Between(next(queue), head, head, null)
@@ -194,11 +195,16 @@ procedure test(x: Loc, x_Heap: Heap, c: Loc)
   if (next(queue)[tail] == null) {
     queue := Add(queue, tail, x);
 
-    assert Between(next(queue), head, tail, next(queue)[x]);  // TODO this fails
+    assert known(head) && known(tail) && known(c) && known(x) && known(null)
+      && knownF(next(queue)) && knownF(next(x_Heap));
 
-    assert knownF(next(queue));
+    assert Between(next(queue), head, tail, tail) && next(queue)[tail] == x;
+    assert Between(next(queue), tail, x, x);
+    assert Between(next(queue), head, tail, x);
+
     queue := Add(queue, x, next(x_Heap)[x]);
 
-    assert knownF(next(queue));
+    assert known(head) && known(tail) && known(c) && known(x) && known(null)
+      && knownF(next(queue)) && knownF(next(x_Heap));
   }
 }

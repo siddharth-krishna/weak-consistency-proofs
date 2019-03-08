@@ -47,7 +47,7 @@ procedure {:atomic} {:layer 1} _call(m: Method, args: ArgList)
   assume _called(hh) == _called(h)[this := true];
   assume _returned(hh) == _returned(h);
   h := hh;
-  assume _called(h)[this];
+  assume _called(h)[this];  // TODO doesn't this follow from above?
 }
 
 procedure {:atomic} {:layer 1} _return({:linear_in "this"} this: Invoc, rets: ArgList)
@@ -65,5 +65,5 @@ procedure {:atomic} {:layer 1} _return({:linear_in "this"} this: Invoc, rets: Ar
   assume _called(hh) == _called(h);
   assume _returned(hh) == _returned(h)[this := true];
   h := hh;
-  assume _returned(h)[this];
+  assume _returned(h)[this];  // TODO doesn't this follow from above?
 }
