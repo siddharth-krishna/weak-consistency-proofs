@@ -54,6 +54,9 @@ function Avoiding(f: [Loc]Loc, x: Loc, y: Loc, z: Loc) returns (bool);
 // Axioms for Between
 //////////////////////////
 
+// read null
+axiom (forall f: [Loc]Loc :: f[null] == null);
+
 // reflexive
 axiom(forall f: [Loc]Loc, x: Loc :: Between(f, x, x, x));
 
@@ -88,12 +91,13 @@ axiom(forall f: [Loc]Loc, x: Loc, y: Loc, z: Loc, w: Loc :: {knownF(f), known(x)
 axiom(forall f: [Loc]Loc, x: Loc, y: Loc, z: Loc :: {knownF(f), known(x), known(y), known(z)} Avoiding(f, x, y, z) <==> (Between(f, x, y, z) || (Between(f, x, y, y) && !Between(f, x, z, z))));
 axiom(forall f: [Loc]Loc, x: Loc, y: Loc, z: Loc :: {knownF(f), known(x), known(y), known(z)} Between(f, x, y, z) <==> (Avoiding(f, x, y, z) && Avoiding(f, x, z, z)));
 
-// BWr: grasshopper's update axiom
+// btwn_write: grasshopper's update axiom
 axiom (forall f: [Loc]Loc, x: Loc, y: Loc, z: Loc, u: Loc, v: Loc :: {f[u := v], known(x), known(y), known(z)}
-        Between(f[u := v], x, y, z) <==>
+        u != null ==>
+          (Between(f[u := v], x, y, z) <==>
           (Between(f, x, y, z) && Avoiding(f, x, z, u))
           || (u != z && Avoiding(f, x, u, z) && Avoiding(f, v, z, u)
-            && (Between(f, x, y, u) || Between(f, v, y, z))));
+            && (Between(f, x, y, u) || Between(f, v, y, z)))));
 
 
 // ---------- Shared state and invariant
