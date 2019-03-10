@@ -82,7 +82,7 @@ axiom(forall f: [Loc]Loc, x: Loc, z: Loc :: {BetweenSet(f, x, z)} Between(f, z, 
 // Axioms for Between
 //////////////////////////
 
-// read null
+// read null  // TODO UNSOUND!! Instead, manually assume this for initial fields
 axiom (forall f: [Loc]Loc :: f[null] == null);
 
 // reflexive

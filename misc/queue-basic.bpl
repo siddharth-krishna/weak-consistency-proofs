@@ -137,7 +137,7 @@ function {:inline} Inv(queue: Heap, head: Loc, tail: Loc) : (bool)
 {
   Between(next(queue), head, head, null)
     && Between(next(queue), head, tail, null)
-    && Subset(BetweenSet(next(queue), head, null),
+    && Equal(BetweenSet(next(queue), head, null),
              Union(Singleton(null), dom(queue)))
     && tail != null
 }
@@ -278,7 +278,7 @@ procedure {:atomic} {:layer 2} atomic_push(x: Loc,
 }
 
 procedure {:yields} {:layer 1} {:refines "atomic_push"} push(x: Loc, {:linear_in "Node"} x_Heap: Heap)
-  requires {:layer 1} dom(x_Heap)[x] && next(x_Heap)[x] == null;
+  requires {:layer 1} x != null && dom(x_Heap)[x] && next(x_Heap)[x] == null;
   requires {:layer 1} Inv(queue, head, tail);
   ensures {:layer 1} Inv(queue, head, tail);
 {
@@ -288,17 +288,21 @@ procedure {:yields} {:layer 1} {:refines "atomic_push"} push(x: Loc, {:linear_in
 
   yield;
   assert {:layer 1} Inv(queue, head, tail);
+  // TODO CONTINUE: debug non-interference for this:
+  // assert {:layer 1} !Between(next(queue), head, x, null);
   t_Heap := x_Heap;
   while (true)
     invariant {:layer 1} dom(t_Heap) == dom(x_Heap);
     invariant {:layer 1} next(t_Heap)[x] == null; // TODO needed?
+    // invariant {:layer 1} !Between(next(queue), head, x, null);
     invariant {:layer 1} Inv(queue, head, tail);
   {
     call t := Readtail();
     yield;
     assert {:layer 1} Inv(queue, head, tail);
     assert {:layer 1} dom(t_Heap) == dom(x_Heap);
-    assert {:layer 1} next(t_Heap)[x] == null;
+    assert {:layer 1} next(t_Heap)[x] == null;  // TODO needed?
+    // assert {:layer 1} !Between(next(queue), head, x, null);
     assert {:layer 1} t != null && (Between(next(queue), head, t, null)
       || Used[t]);
     assert {:layer 1} next(queue)[t] == null ==> t == tail;
@@ -308,11 +312,13 @@ procedure {:yields} {:layer 1} {:refines "atomic_push"} push(x: Loc, {:linear_in
     assert {:layer 1} Inv(queue, head, tail);
     assert {:layer 1} dom(t_Heap) == dom(x_Heap);
     assert {:layer 1} next(t_Heap)[x] == null;
+    assert {:layer 1} !Between(next(queue), head, x, null);
     assert {:layer 1} t != null && (Between(next(queue), head, t, null)
       || Used[t]);
     assert {:layer 1} next(queue)[t] == null ==> t == tail;
 
     if (tn == null) {
+      // call _assume_not_btwn(x);
       call g, t_Heap := TransferToqueue(t, tn, x, t_Heap);
       if (g) {
         break;
@@ -320,8 +326,51 @@ procedure {:yields} {:layer 1} {:refines "atomic_push"} push(x: Loc, {:linear_in
     } // TODO else cas tail
     yield;
     assert {:layer 1} dom(t_Heap) == dom(x_Heap);
+    // assert {:layer 1} !Between(next(queue), head, x, null);
     assert {:layer 1} Inv(queue, head, tail);
   }
   yield;
   assert {:expand} {:layer 1} Inv(queue, head, tail);
 }
+
+procedure {:layer 1} _assume_not_btwn(x: Loc);
+  ensures {:layer 1} !Between(next(queue), head, x, null);
+  
+/*
+procedure {:atomic} {:layer 2} atomic_size() returns (x: int)
+{}
+
+procedure {:yields} {:layer 1} {:refines "atomic_size"} size() returns (x: int)
+requires {:layer 1} Inv(queue, head, tail);
+ensures {:layer 1} Inv(queue, head, tail);
+{
+  var c: Loc;
+
+  yield;
+  assert {:layer 1} Inv(queue, head, tail);
+
+  x := 0;
+  call c := Readhead();
+
+  yield;
+  assert {:layer 1} Inv(queue, head, tail);
+  assert {:layer 1} (Used[c] && Between(next(queue), c, c, head))
+    || Between(next(queue), head, c, null);
+
+  while (c != null)
+    invariant {:layer 1} Inv(queue, head, tail);
+    invariant {:layer 1} (Used[c] && Between(next(queue), c, c, head))
+      || Between(next(queue), head, c, null);
+  {
+    x := x + 1;
+    call c := Load(c); // TODO: load doesn't return next if not in dom!?
+    yield;
+    assert {:layer 1} Inv(queue, head, tail);
+    assert {:layer 1} (Used[c] && Between(next(queue), c, c, head))
+                        || Between(next(queue), head, c, null); // AtomicTransferToqueue breaks this, but it shouldn't!?
+  }
+  yield;
+  assert {:layer 1} Inv(queue, head, tail);
+  return;
+}
+*/
