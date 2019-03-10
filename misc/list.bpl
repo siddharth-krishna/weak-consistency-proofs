@@ -1,34 +1,34 @@
-type Loc;
-const null: Loc;
+type Ref;
+const null: Ref;
 
 type Heap;
-function {:linear "Node"} dom(Heap): [Loc]bool;
-function next(Heap): [Loc]Loc;
-function data(Heap): [Loc]int;
-function {:builtin "MapConst"} MapConstLocBool(bool) : [Loc]bool;
+function {:linear "Node"} dom(Heap): [Ref]bool;
+function next(Heap): [Ref]Ref;
+function data(Heap): [Ref]int;
+function {:builtin "MapConst"} MapConstLocBool(bool) : [Ref]bool;
 
 function EmptyLmap(): (Heap);
 axiom (dom(EmptyLmap()) == MapConstLocBool(false));
 
-function Add(h: Heap, l: Loc, v: Loc): (Heap);
-axiom (forall h: Heap, l: Loc, v: Loc :: dom(Add(h, l, v)) == dom(h)[l:=true] && next(Add(h, l, v)) == next(h)[l := v]);
+function Add(h: Heap, l: Ref, v: Ref): (Heap);
+axiom (forall h: Heap, l: Ref, v: Ref :: dom(Add(h, l, v)) == dom(h)[l:=true] && next(Add(h, l, v)) == next(h)[l := v]);
 
-function Remove(h: Heap, l: Loc): (Heap);
-axiom (forall h: Heap, l: Loc :: dom(Remove(h, l)) == dom(h)[l:=false] && next(Remove(h, l)) == next(h));
+function Remove(h: Heap, l: Ref): (Heap);
+axiom (forall h: Heap, l: Ref :: dom(Remove(h, l)) == dom(h)[l:=false] && next(Remove(h, l)) == next(h));
 
 
 // Concrete state of implementation
 var heap: Heap;
-var head: Loc;
-var tail: Loc;
+var head: Ref;
+var tail: Ref;
 
 
 // The invariants
-function {:inline} Inv(heap: Heap, head: Loc, tail: Loc) : bool
+function {:inline} Inv(heap: Heap, head: Ref, tail: Ref) : bool
 {
-  BetweenSet(next(heap), head, null)[head] && BetweenSet(next(heap), head, null)[tail]
-    && (forall l: Loc :: {known(l)} known(l) ==> (Between(next(heap), head, l, null) ==> l == null || dom(heap)[l]))
-    //    && Subset(BetweenSet(next(heap), head, null), Union(Singleton(null), dom(heap)))
+  BtwnSet(next(heap), head, null)[head] && BtwnSet(next(heap), head, null)[tail]
+    && (forall l: Ref :: {known(l)} known(l) ==> (Btwn(next(heap), head, l, null) ==> l == null || dom(heap)[l]))
+    //    && Subset(BtwnSet(next(heap), head, null), Union(Singleton(null), dom(heap)))
     && tail != null
     && known(head) && known(tail) && known(null) && knownF(next(heap))
 }
@@ -36,7 +36,7 @@ function {:inline} Inv(heap: Heap, head: Loc, tail: Loc) : bool
 // ---------- Primitives/helpers for modifying global state
 
 
-procedure alloc(x: Loc)
+procedure alloc(x: Ref)
   requires !dom(heap)[x] && x != null;
   ensures heap == Add(old(heap), x, null);
   ensures knownF(next(heap));
@@ -46,24 +46,24 @@ procedure alloc(x: Loc)
   heap := Add(heap, x, null);
 }
 
-procedure {:inline 1} read_tail() returns (t: Loc)
+procedure {:inline 1} read_tail() returns (t: Ref)
 {
   t := tail;
 }
 
-procedure {:inline 1} read_head() returns (h: Loc)
+procedure {:inline 1} read_head() returns (h: Ref)
 {
   h := head;
 }
 
-procedure {:inline 1} read_next(x: Loc) returns (y: Loc)
+procedure {:inline 1} read_next(x: Ref) returns (y: Ref)
   requires dom(heap)[x];
   ensures known(y);
 {
   y := next(heap)[x];
 }
 
-procedure cas_next(x, x_old, x_new: Loc)
+procedure cas_next(x, x_old, x_new: Ref)
   returns (res: bool)
   requires dom(heap)[x];
   ensures next(old(heap))[x] == x_old ==> res && heap == Add(old(heap), x, x_new);
@@ -80,7 +80,7 @@ procedure cas_next(x, x_old, x_new: Loc)
   }
 }
 
-procedure cas_tail(t_old, t_new: Loc)
+procedure cas_tail(t_old, t_new: Ref)
   returns (res: bool)
   ensures old(tail) == t_old ==> res && tail == t_new;
   ensures old(tail) != t_old ==> !res && tail == old(tail);
@@ -94,7 +94,7 @@ procedure cas_tail(t_old, t_new: Loc)
   }
 }
 
-procedure cas_head(h_old, h_new: Loc)
+procedure cas_head(h_old, h_new: Ref)
   returns (res: bool)
   ensures old(head) == h_old ==> res && head == h_new;
   ensures old(head) != h_old ==> !res && head == old(head);
@@ -112,15 +112,15 @@ procedure cas_head(h_old, h_new: Loc)
 // ---------- The ADT methods
 
 
-procedure offer(v: int, x: Loc)
+procedure offer(v: int, x: Ref)
   returns (res: bool)
   requires Inv(heap, head, tail);
   ensures Inv(heap, head, tail);
   modifies heap, tail;
 {
-  var t, tn: Loc;
+  var t, tn: Ref;
   var b: bool;
-  assume !Between(next(heap), head, x, null) && !dom(heap)[x];
+  assume !Btwn(next(heap), head, x, null) && !dom(heap)[x];
 
   assert known(x);
   call alloc(x);
@@ -128,7 +128,7 @@ procedure offer(v: int, x: Loc)
   while (true)
     invariant Inv(heap, head, tail);
     invariant known(x) && x != null && dom(heap)[x] && next(heap)[x] == null;
-    invariant !Between(next(heap), head, x, null);
+    invariant !Btwn(next(heap), head, x, null);
   {
     call t := read_tail();
     assert Inv(heap, head, tail);
@@ -159,7 +159,7 @@ procedure poll()
   ensures Inv(heap, head, tail);
   modifies heap, head, tail;
 {
-  var h, h1, t, x: Loc;
+  var h, h1, t, x: Ref;
   var b: bool;
 
   while (true)
@@ -191,90 +191,90 @@ procedure poll()
 // ---------- Reachability, between, and associated theories
 
 // Predicates used to control the triggers on the below axioms
-function known(x: Loc) : bool;
-function knownF(f: [Loc]Loc) : bool;
-axiom(forall x: Loc :: {known(x)} known(x));
-axiom(forall f: [Loc]Loc :: {knownF(f)} knownF(f));
+function known(x: Ref) : bool;
+function knownF(f: [Ref]Ref) : bool;
+axiom(forall x: Ref :: {known(x)} known(x));
+axiom(forall f: [Ref]Ref :: {knownF(f)} knownF(f));
 
  
 ////////////////////
 // Between predicate
 ////////////////////
-function Between(f: [Loc]Loc, x: Loc, y: Loc, z: Loc) returns (bool);
-function Avoiding(f: [Loc]Loc, x: Loc, y: Loc, z: Loc) returns (bool);
+function Btwn(f: [Ref]Ref, x: Ref, y: Ref, z: Ref) returns (bool);
+function ReachW(f: [Ref]Ref, x: Ref, y: Ref, z: Ref) returns (bool);
 
 
 //////////////////////////
 // Between set constructor
 //////////////////////////
-function BetweenSet(f: [Loc]Loc, x: Loc, z: Loc) returns ([Loc]bool);
+function BtwnSet(f: [Ref]Ref, x: Ref, z: Ref) returns ([Ref]bool);
 
 ////////////////////////////////////////////////////
-// axioms relating Between and BetweenSet
+// axioms relating Btwn and BtwnSet
 ////////////////////////////////////////////////////
-axiom(forall f: [Loc]Loc, x: Loc, y: Loc, z: Loc :: {knownF(f), known(x), known(y), known(z)} BetweenSet(f, x, z)[y] <==> Between(f, x, y, z));
-axiom(forall f: [Loc]Loc, x: Loc, y: Loc, z: Loc :: {knownF(f), known(x), known(y), known(z)} Between(f, x, y, z) ==> BetweenSet(f, x, z)[y]);
-axiom(forall f: [Loc]Loc, x: Loc :: {knownF(f), known(x)} Between(f, x, x, x));
-axiom(forall f: [Loc]Loc, x: Loc, z: Loc :: {BetweenSet(f, x, z)} Between(f, z, z, z));
+axiom(forall f: [Ref]Ref, x: Ref, y: Ref, z: Ref :: {knownF(f), known(x), known(y), known(z)} BtwnSet(f, x, z)[y] <==> Btwn(f, x, y, z));
+axiom(forall f: [Ref]Ref, x: Ref, y: Ref, z: Ref :: {knownF(f), known(x), known(y), known(z)} Btwn(f, x, y, z) ==> BtwnSet(f, x, z)[y]);
+axiom(forall f: [Ref]Ref, x: Ref :: {knownF(f), known(x)} Btwn(f, x, x, x));
+axiom(forall f: [Ref]Ref, x: Ref, z: Ref :: {BtwnSet(f, x, z)} Btwn(f, z, z, z));
 
 
 //////////////////////////
-// Axioms for Between
+// Axioms for Btwn
 //////////////////////////
 
 // reflexive
-axiom(forall f: [Loc]Loc, x: Loc :: Between(f, x, x, x));
+axiom(forall f: [Ref]Ref, x: Ref :: Btwn(f, x, x, x));
 
 // step
-axiom(forall f: [Loc]Loc, x: Loc :: {f[x]} Between(f, x, f[x], f[x]));
+axiom(forall f: [Ref]Ref, x: Ref :: {f[x]} Btwn(f, x, f[x], f[x]));
 
 // reach
-axiom(forall f: [Loc]Loc, x: Loc, y: Loc :: {f[x], known(y)} Between(f, x, y, y) ==> x == y || Between(f, x, f[x], y));
+axiom(forall f: [Ref]Ref, x: Ref, y: Ref :: {f[x], known(y)} Btwn(f, x, y, y) ==> x == y || Btwn(f, x, f[x], y));
 
 // cycle
-axiom(forall f: [Loc]Loc, x: Loc, y:Loc :: {f[x], known(y)} f[x] == x && Between(f, x, y, y) ==> x == y);
+axiom(forall f: [Ref]Ref, x: Ref, y:Ref :: {f[x], known(y)} f[x] == x && Btwn(f, x, y, y) ==> x == y);
 
 // sandwich
-axiom(forall f: [Loc]Loc, x: Loc, y: Loc :: {knownF(f), known(x), known(y)} Between(f, x, y, x) ==> x == y);
+axiom(forall f: [Ref]Ref, x: Ref, y: Ref :: {knownF(f), known(x), known(y)} Btwn(f, x, y, x) ==> x == y);
 
 // order1
-axiom(forall f: [Loc]Loc, x: Loc, y: Loc, z: Loc :: {knownF(f), known(x), known(y), known(z)} Between(f, x, y, y) && Between(f, x, z, z) ==> Between(f, x, y, z) || Between(f, x, z, y));
+axiom(forall f: [Ref]Ref, x: Ref, y: Ref, z: Ref :: {knownF(f), known(x), known(y), known(z)} Btwn(f, x, y, y) && Btwn(f, x, z, z) ==> Btwn(f, x, y, z) || Btwn(f, x, z, y));
 
 // order2
-axiom(forall f: [Loc]Loc, x: Loc, y: Loc, z: Loc :: {knownF(f), known(x), known(y), known(z)} Between(f, x, y, z) ==> Between(f, x, y, y) && Between(f, y, z, z));
+axiom(forall f: [Ref]Ref, x: Ref, y: Ref, z: Ref :: {knownF(f), known(x), known(y), known(z)} Btwn(f, x, y, z) ==> Btwn(f, x, y, y) && Btwn(f, y, z, z));
 
 // transitive1
-axiom(forall f: [Loc]Loc, x: Loc, y: Loc, z: Loc :: {knownF(f), known(x), known(y), known(z)} Between(f, x, y, y) && Between(f, y, z, z) ==> Between(f, x, z, z));
+axiom(forall f: [Ref]Ref, x: Ref, y: Ref, z: Ref :: {knownF(f), known(x), known(y), known(z)} Btwn(f, x, y, y) && Btwn(f, y, z, z) ==> Btwn(f, x, z, z));
 
 // transitive2
-axiom(forall f: [Loc]Loc, x: Loc, y: Loc, z: Loc, w: Loc :: {knownF(f), known(x), known(y), known(z), known(w)} Between(f, x, y, z) && Between(f, y, w, z) ==> Between(f, x, y, w) && Between(f, x, w, z));
+axiom(forall f: [Ref]Ref, x: Ref, y: Ref, z: Ref, w: Ref :: {knownF(f), known(x), known(y), known(z), known(w)} Btwn(f, x, y, z) && Btwn(f, y, w, z) ==> Btwn(f, x, y, w) && Btwn(f, x, w, z));
 
 // transitive3
-axiom(forall f: [Loc]Loc, x: Loc, y: Loc, z: Loc, w: Loc :: {knownF(f), known(x), known(y), known(z), known(w)} Between(f, x, y, z) && Between(f, x, w, y) ==> Between(f, x, w, z) && Between(f, w, y, z));
+axiom(forall f: [Ref]Ref, x: Ref, y: Ref, z: Ref, w: Ref :: {knownF(f), known(x), known(y), known(z), known(w)} Btwn(f, x, y, z) && Btwn(f, x, w, y) ==> Btwn(f, x, w, z) && Btwn(f, w, y, z));
 
 // This axiom is required to deal with the incompleteness of the trigger for the reflexive axiom.
 // It cannot be proved using the rest of the axioms.
-axiom(forall f: [Loc]Loc, u:Loc, x: Loc :: {knownF(f), known(x), known(u)} Between(f, u, x, x) ==> Between(f, u, u, x));
+axiom(forall f: [Ref]Ref, u:Ref, x: Ref :: {knownF(f), known(x), known(u)} Btwn(f, u, x, x) ==> Btwn(f, u, u, x));
 
-// relation between Avoiding and Between
-axiom(forall f: [Loc]Loc, x: Loc, y: Loc, z: Loc :: {knownF(f), known(x), known(y), known(z)} Avoiding(f, x, y, z) <==> (Between(f, x, y, z) || (Between(f, x, y, y) && !Between(f, x, z, z))));
-axiom(forall f: [Loc]Loc, x: Loc, y: Loc, z: Loc :: {knownF(f), known(x), known(y), known(z)} Between(f, x, y, z) <==> (Avoiding(f, x, y, z) && Avoiding(f, x, z, z)));
+// relation between ReachW and Btwn
+axiom(forall f: [Ref]Ref, x: Ref, y: Ref, z: Ref :: {knownF(f), known(x), known(y), known(z)} ReachW(f, x, y, z) <==> (Btwn(f, x, y, z) || (Btwn(f, x, y, y) && !Btwn(f, x, z, z))));
+axiom(forall f: [Ref]Ref, x: Ref, y: Ref, z: Ref :: {knownF(f), known(x), known(y), known(z)} Btwn(f, x, y, z) <==> (ReachW(f, x, y, z) && ReachW(f, x, z, z)));
 
 // BWr: grasshopper's update axiom
-axiom (forall f: [Loc]Loc, x: Loc, y: Loc, z: Loc, u: Loc, v: Loc :: {f[u := v], known(x), known(y), known(z)}
-        Between(f[u := v], x, y, z) <==>
-          (Between(f, x, y, z) && Avoiding(f, x, z, u))
-          || (u != z && Avoiding(f, x, u, z) && Avoiding(f, v, z, u)
-            && (Between(f, x, y, u) || Between(f, v, y, z))));
+axiom (forall f: [Ref]Ref, x: Ref, y: Ref, z: Ref, u: Ref, v: Ref :: {f[u := v], known(x), known(y), known(z)}
+        Btwn(f[u := v], x, y, z) <==>
+          (Btwn(f, x, y, z) && ReachW(f, x, z, u))
+          || (u != z && ReachW(f, x, u, z) && ReachW(f, v, z, u)
+            && (Btwn(f, x, y, u) || Btwn(f, v, y, z))));
 
 
 /* Not sure if this is the same update as the grasshopper axiom BWr above:
 // update
-axiom(forall f: [Loc]Loc, u: Loc, v: Loc, x: Loc, p: Loc, q: Loc :: {knownF(f), known(x), known(u), known(v), known(p), known(q)} Avoiding(f[p := q], u, v, x) <==> ((Avoiding(f, u, v, p) && Avoiding(f, u, v, x)) || (Avoiding(f, u, p, x) && p != x && Avoiding(f, q, v, p) && Avoiding(f, q, v, x))));
+axiom(forall f: [Ref]Ref, u: Ref, v: Ref, x: Ref, p: Ref, q: Ref :: {knownF(f), known(x), known(u), known(v), known(p), known(q)} ReachW(f[p := q], u, v, x) <==> ((ReachW(f, u, v, p) && ReachW(f, u, v, x)) || (ReachW(f, u, p, x) && p != x && ReachW(f, q, v, p) && ReachW(f, q, v, x))));
 */
 
 /* Why are these needed?
-axiom (forall f: [Loc]Loc, p: Loc, q: Loc, u: Loc, w: Loc :: {knownF(f), known(p), known(q), known(u), known(w)} Avoiding(f, u, w, p) ==> Equal(BetweenSet(f[p := q], u, w), BetweenSet(f, u, w)));
-axiom (forall f: [Loc]Loc, p: Loc, q: Loc, u: Loc, w: Loc :: {knownF(f), known(p), known(q), known(u), known(w)} p != w && Avoiding(f, u, p, w) && Avoiding(f, q, w, p) ==> Equal(BetweenSet(f[p := q], u, w), Union(BetweenSet(f, u, p), BetweenSet(f, q, w))));
-axiom (forall f: [Loc]Loc, p: Loc, q: Loc, u: Loc, w: Loc :: {knownF(f), known(p), known(q), known(u), known(w)} Avoiding(f, u, w, p) || (p != w && Avoiding(f, u, p, w) && Avoiding(f, q, w, p)) || Equal(BetweenSet(f[p := q], u, w), Empty()));
+axiom (forall f: [Ref]Ref, p: Ref, q: Ref, u: Ref, w: Ref :: {knownF(f), known(p), known(q), known(u), known(w)} ReachW(f, u, w, p) ==> Equal(BtwnSet(f[p := q], u, w), BtwnSet(f, u, w)));
+axiom (forall f: [Ref]Ref, p: Ref, q: Ref, u: Ref, w: Ref :: {knownF(f), known(p), known(q), known(u), known(w)} p != w && ReachW(f, u, p, w) && ReachW(f, q, w, p) ==> Equal(BtwnSet(f[p := q], u, w), Union(BtwnSet(f, u, p), BtwnSet(f, q, w))));
+axiom (forall f: [Ref]Ref, p: Ref, q: Ref, u: Ref, w: Ref :: {knownF(f), known(p), known(q), known(u), known(w)} ReachW(f, u, w, p) || (p != w && ReachW(f, u, p, w) && ReachW(f, q, w, p)) || Equal(BtwnSet(f[p := q], u, w), Empty()));
  */
