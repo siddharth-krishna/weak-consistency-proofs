@@ -312,7 +312,7 @@ procedure {:yields} {:layer 1} {:refines "atomic_push"} push(x: Ref, {:linear_in
     assert {:layer 1} Inv(queue, head, tail);
     assert {:layer 1} dom(t_Heap) == dom(x_Heap);
     assert {:layer 1} next(t_Heap)[x] == null;
-    assert {:layer 1} !Btwn(next(queue), head, x, null);
+    // assert {:layer 1} !Btwn(next(queue), head, x, null);
     assert {:layer 1} t != null && (Btwn(next(queue), head, t, null)
       || Used[t]);
     assert {:layer 1} next(queue)[t] == null ==> t == tail;
