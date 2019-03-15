@@ -3,6 +3,7 @@
 // based on the Michael-Scott queue.
 // Assumes GC, so does not free dequeued nodes.
 // Also uses the simplified heap encoding from CIVL's Treiber example.
+// Also trying to use FP sets for linearity instead of Heaps and dom(heap).
 //
 // Use options -noinfer -typeEncoding:m -useArrayTheory
 // ----------------------------------------
@@ -10,23 +11,20 @@
 type Ref;
 const null: Ref;
 
-type Heap;
-function {:linear "Node"} dom(Heap): [Ref]bool;
-function next(Heap): [Ref]Ref;
 function {:builtin "MapConst"} MapConstBool(bool) : [Ref]bool;
 
-function EmptyHeap(): (Heap);
-axiom (dom(EmptyHeap()) == MapConstBool(false));
+function EmptyHeap(): ([Ref]bool);
+axiom (EmptyHeap() == MapConstBool(false));
 
-function Add(h: Heap, l: Ref, v: Ref): (Heap);
-axiom (forall h: Heap, l: Ref, v: Ref :: dom(Add(h, l, v)) == dom(h)[l:=true] && next(Add(h, l, v)) == next(h)[l := v]);
+function Add(h: [Ref]bool, l: Ref): ([Ref]bool);
+axiom (forall h: [Ref]bool, l: Ref :: Add(h, l) == h[l:=true]);
 
-function Remove(h: Heap, l: Ref): (Heap);
-axiom (forall h: Heap, l: Ref :: dom(Remove(h, l)) == dom(h)[l:=false] && next(Remove(h, l)) == next(h));
+function Remove(h: [Ref]bool, l: Ref): ([Ref]bool);
+axiom (forall h: [Ref]bool, l: Ref :: Remove(h, l) == h[l:=false]);
 
 // Linearity stuff:
 
-function {:inline} {:linear "Node"} NodeSetCollector(x: [Ref]bool) : [Ref]bool
+function {:inline} {:linear "FP"} NodeSetCollector(x: [Ref]bool) : [Ref]bool
 {
   x
 }
@@ -133,21 +131,24 @@ axiom (forall f: [Ref]Ref, x: Ref, y: Ref, z: Ref, u: Ref, v: Ref :: {f[u := v],
 
 // ---------- Shared state and invariant
 
-var {:linear "Node"} {:layer 0,2} queue: Heap;
-var {:linear "Node"} {:layer 0,2} Used: [Ref]bool;
+// Fields:
+var {:layer 0, 1} next: [Ref]Ref;
 
-var {:layer 0,2} head: Ref;
-var {:layer 0,2} tail: Ref;
+var {:linear "FP"} {:layer 0, 1} queueFP: [Ref]bool;
+var {:linear "FP"} {:layer 0, 1} UsedFP: [Ref]bool;
+
+var {:layer 0, 1} head: Ref;
+var {:layer 0, 1} tail: Ref;
 
 
-function {:inline} Inv(queue: Heap, head: Ref, tail: Ref) : (bool)
+function {:inline} Inv(queueFP: [Ref]bool, head: Ref, tail: Ref, next: [Ref]Ref) : (bool)
 {
-  Btwn(next(queue), head, head, null)
-    && Btwn(next(queue), head, tail, null)
-    && Equal(BtwnSet(next(queue), head, null),
-             Union(Singleton(null), dom(queue)))
+  Btwn(next, head, head, null)
+    && Btwn(next, head, tail, null)
+    && Equal(BtwnSet(next, head, null),
+             Union(Singleton(null), queueFP))
     && tail != null
-    && known(head) && known(tail) && known(null) && knownF(next(queue))
+    && known(head) && known(tail) && known(null) && knownF(next)
 }
 
 
@@ -165,32 +166,36 @@ procedure {:yields} {:layer 0} {:refines "AtomicReadtail"} Readtail() returns (v
 
 procedure {:atomic} {:layer 1} AtomicLoad(i:Ref) returns (v:Ref)
 {
-  assert dom(queue)[i] || Used[i];
-  if (dom(queue)[i]) {
-    v := next(queue)[i];
-    assume known(v);
-  }
+  assert queueFP[i] || UsedFP[i];
+  v := next[i];
+  assume known(v);
 }
 
 procedure {:yields} {:layer 0} {:refines "AtomicLoad"} Load(i:Ref) returns (v:Ref);
 
-procedure {:both} {:layer 1} AtomicStore({:linear_in "Node"} l_in:Heap, i:Ref, v:Ref) returns ({:linear "Node"} l_out:Heap)
-{ assert dom(l_in)[i]; l_out := Add(l_in, i, v); assume knownF(next(l_in)); }
+procedure {:atomic} {:layer 1} AtomicStore({:linear "FP"} FP:[Ref]bool,
+    i:Ref, v:Ref)
+  modifies next;
+{
+  assert FP[i];
+  next := next[i := v];
+  assume knownF(next);
+}
 
-procedure {:yields} {:layer 0} {:refines "AtomicStore"} Store({:linear_in "Node"} l_in:Heap, i:Ref, v:Ref) returns ({:linear "Node"} l_out:Heap);
-
+procedure {:yields} {:layer 0} {:refines "AtomicStore"}
+  Store({:linear "FP"} FP:[Ref]bool, i:Ref, v:Ref);
 
 procedure {:atomic} {:layer 1} AtomicTransferToqueue(t: Ref, oldVal: Ref,
-    newVal: Ref, {:linear_in "Node"} l_in:Heap)
-  returns (r: bool, {:linear "Node"} l_out:Heap)
-  modifies queue;
+    newVal: Ref, {:linear_in "FP"} l_in:[Ref]bool)
+  returns (r: bool, {:linear "FP"} l_out:[Ref]bool)
+  modifies next, queueFP;
 {
-  assert dom(l_in)[newVal];
-  if (next(queue)[t] == oldVal) {
-    queue := Add(queue, t, newVal);
+  assert l_in[newVal];
+  if (next[t] == oldVal) {
+    next := next[t := newVal];
     l_out := EmptyHeap();
-    queue := Add(queue, newVal, next(l_in)[newVal]);
-    assume known(oldVal) && known(newVal) && known(next(l_in)[newVal]) && knownF(next(queue));
+    queueFP := Add(queueFP, newVal);
+    assume known(oldVal) && known(newVal) && known(next[newVal]) && knownF(next);
     r := true;
   } else {
     l_out := l_in;
@@ -200,17 +205,17 @@ procedure {:atomic} {:layer 1} AtomicTransferToqueue(t: Ref, oldVal: Ref,
 
 procedure {:yields} {:layer 0} {:refines "AtomicTransferToqueue"}
   TransferToqueue(t: Ref, oldVal: Ref, newVal: Ref,
-                  {:linear_in "Node"} l_in:Heap)
-  returns (r: bool, {:linear "Node"} l_out:Heap);
+                  {:linear_in "FP"} l_in:[Ref]bool)
+  returns (r: bool, {:linear "FP"} l_out:[Ref]bool);
 
 procedure {:atomic} {:layer 1} AtomicTransferFromqueue(oldVal: Ref, newVal: Ref) returns (r: bool)
-  modifies head, Used, queue;
+  modifies head, UsedFP, queueFP;
 {
   if (oldVal == head) {
     head := newVal;
-    Used[oldVal] := true;
-    queue := Remove(queue, oldVal);
-    assume known(oldVal) && known(head) && knownF(next(queue));
+    UsedFP[oldVal] := true;
+    queueFP := Remove(queueFP, oldVal);
+    assume known(oldVal) && known(head) && knownF(next);
     r := true;
   }
   else {
@@ -224,45 +229,45 @@ procedure {:yields} {:layer 0} {:refines "AtomicTransferFromqueue"} TransferFrom
 // ---------- queue methods:
 
 procedure {:atomic} {:layer 2} atomic_pop() returns (t: Ref)
-  modifies Used, head, queue;
+  modifies UsedFP, head, queueFP;
 {
-  assume head != null;
-  t := head;
-  Used[t] := true;
-  head := next(queue)[t];
-  queue := Remove(queue, t);
-  assume known(head) && knownF(next(queue));
+  // assume head != null;
+  // t := head;
+  // UsedFP[t] := true;
+  // head := next[t];
+  // queueFP := Remove(queueFP, t);
+  // assume known(head) && knownF(next);
 }
 
 procedure {:yields} {:layer 1} {:refines "atomic_pop"} pop() returns (h: Ref)
-requires {:layer 1} Inv(queue, head, tail);
-ensures {:layer 1} Inv(queue, head, tail);
+requires {:layer 1} Inv(queueFP, head, tail, next);
+ensures {:layer 1} Inv(queueFP, head, tail, next);
 {
   var g: bool;
   var t, x: Ref;
 
   yield;
-  assert {:layer 1} Inv(queue, head, tail);
+  assert {:layer 1} Inv(queueFP, head, tail, next);
   while (true)
-    invariant {:layer 1} Inv(queue, head, tail);
+    invariant {:layer 1} Inv(queueFP, head, tail, next);
   {
     call h := Readhead();
     yield;
-    assert {:layer 1} Inv(queue, head, tail);
-    assert {:layer 1} h == head || Used[h];
+    assert {:layer 1} Inv(queueFP, head, tail, next);
+    assert {:layer 1} h == head || UsedFP[h];
 
     call t := Readtail();
     yield;
-    assert {:layer 1} Inv(queue, head, tail);
-    assert {:layer 1} h == head || Used[h];
+    assert {:layer 1} Inv(queueFP, head, tail, next);
+    assert {:layer 1} h == head || UsedFP[h];
     assert {:layer 1} (h == head && h != t ==> head != tail);
 
     if (h != t) {
       call x := Load(h);
       yield;
-      assert {:layer 1} Inv(queue, head, tail);
-      assert {:layer 1} h == head || Used[h];
-      assert {:layer 1} (h == head && h != t ==> x == next(queue)[head]);
+      assert {:layer 1} Inv(queueFP, head, tail, next);
+      assert {:layer 1} h == head || UsedFP[h];
+      assert {:layer 1} (h == head && h != t ==> x == next[head]);
       assert {:layer 1} (h == head && h != t ==> head != tail);
 
       call g := TransferFromqueue(h, x);
@@ -271,62 +276,59 @@ ensures {:layer 1} Inv(queue, head, tail);
       }
     }
     yield;
-    assert {:layer 1} Inv(queue, head, tail);
+    assert {:layer 1} Inv(queueFP, head, tail, next);
   }
   yield;
-  assert {:expand} {:layer 1} Inv(queue, head, tail);
+  assert {:expand} {:layer 1} Inv(queueFP, head, tail, next);
 }
 
 
 procedure {:atomic} {:layer 2} atomic_push(x: Ref,
- {:linear_in "Node"} x_Heap: Heap)
- modifies queue, tail;
+ {:linear_in "FP"} x_Heap: [Ref]bool)
+ modifies queueFP, tail;
 {
-  if (next(queue)[tail] == null) {
-    queue := Add(queue, tail, x);
-    queue := Add(queue, x, null);
-  }
+  // if (next[tail] == null) {
+  //   queueFP := Add(queueFP, tail, x);
+  //   queueFP := Add(queueFP, x, null);
+  // }
   // tail := x;
 }
 
-procedure {:yields} {:layer 1} {:refines "atomic_push"} push(x: Ref, {:linear_in "Node"} x_Heap: Heap)
-  requires {:layer 1} dom(x_Heap)[x] && next(x_Heap)[x] == null;
-  requires {:layer 1} Inv(queue, head, tail);
-  ensures {:layer 1} Inv(queue, head, tail);
+procedure {:yields} {:layer 1} {:refines "atomic_push"} push(x: Ref, {:linear_in "FP"} x_Heap: [Ref]bool)
+  requires {:layer 1} x_Heap[x] && next[x] == null;
+  requires {:layer 1} Inv(queueFP, head, tail, next);
+  ensures {:layer 1} Inv(queueFP, head, tail, next);
 {
   var t, tn: Ref;
   var g: bool;
-  var {:linear "Node"} t_Heap: Heap;
+  var {:linear "FP"} t_Heap: [Ref]bool;
 
   yield;
-  assert {:layer 1} Inv(queue, head, tail);
-  assert {:layer 1} known(t) && known(tn);
+  assert {:layer 1} Inv(queueFP, head, tail, next);
+  assert {:layer 1} x_Heap[x] && next[x] == null;
   t_Heap := x_Heap;
   while (true)
-    invariant {:layer 1} dom(t_Heap) == dom(x_Heap);
-    invariant {:layer 1} next(t_Heap)[x] == null; // TODO needed?
-    invariant {:layer 1} Inv(queue, head, tail);
-    invariant {:layer 1} known(t) && known(tn);
+    invariant {:layer 1} Inv(queueFP, head, tail, next);
+    invariant {:layer 1} t_Heap == x_Heap;
+    invariant {:layer 1} x_Heap[x] && next[x] == null;
   {
     call t := Readtail();
     yield;
-    assert {:layer 1} Inv(queue, head, tail);
-    assert {:layer 1} known(t) && known(tn);
-    assert {:layer 1} dom(t_Heap) == dom(x_Heap);
-    assert {:layer 1} next(t_Heap)[x] == null;
-    assert {:layer 1} t != null && (Btwn(next(queue), head, t, null)
-      || Used[t]);
-    assert {:layer 1} next(queue)[t] == null ==> t == tail;
+    assert {:layer 1} Inv(queueFP, head, tail, next);
+    assert {:layer 1} t_Heap == x_Heap;
+    assert {:layer 1} x_Heap[x] && next[x] == null;
+    assert {:layer 1} t != null && (Btwn(next, head, t, null)
+      || UsedFP[t]);
+    assert {:layer 1} next[t] == null ==> t == tail;
 
     call tn := Load(t);
     yield;
-    assert {:layer 1} Inv(queue, head, tail);
-    assert {:layer 1} known(t) && known(tn);
-    assert {:layer 1} dom(t_Heap) == dom(x_Heap);
-    assert {:layer 1} next(t_Heap)[x] == null;
-    assert {:layer 1} t != null && (Btwn(next(queue), head, t, null)
-      || Used[t]);
-    assert {:layer 1} next(queue)[t] == null ==> t == tail;
+    assert {:layer 1} Inv(queueFP, head, tail, next);
+    assert {:layer 1} t_Heap == x_Heap;
+    assert {:layer 1} x_Heap[x] && next[x] == null;
+    assert {:layer 1} t != null && (Btwn(next, head, t, null)
+      || UsedFP[t]);
+    assert {:layer 1} next[t] == null ==> t == tail;
 
     if (tn == null) {
       call g, t_Heap := TransferToqueue(t, tn, x, t_Heap);
@@ -335,16 +337,50 @@ procedure {:yields} {:layer 1} {:refines "atomic_push"} push(x: Ref, {:linear_in
       }
     } // TODO else cas tail
     yield;
-    assert {:layer 1} dom(t_Heap) == dom(x_Heap);
-    assert {:layer 1} Inv(queue, head, tail);
-    assert {:layer 1} known(t) && known(tn);
+    assert {:layer 1} Inv(queueFP, head, tail, next);
+    assert {:layer 1} t_Heap == x_Heap;
+    assert {:layer 1} x_Heap[x] && next[x] == null;
   }
   yield;
-  assert {:layer 1} known(head) && known(tail) && known(null) && knownF(next(queue));
-  assert {:layer 1} Btwn(next(queue), head, head, null);
-  assert {:layer 1} Btwn(next(queue), head, tail, null);
-  assert {:layer 1} Equal(BtwnSet(next(queue), head, null),
-             Union(Singleton(null), dom(queue)));
-  assert {:layer 1} tail != null;
-  assert {:expand} {:layer 1} Inv(queue, head, tail);
+  assert {:expand} {:layer 1} Inv(queueFP, head, tail, next);
 }
+
+/*
+
+procedure {:atomic} {:layer 2} atomic_size() returns (x: int)
+{}
+
+procedure {:yields} {:layer 1} {:refines "atomic_size"} size() returns (x: int)
+requires {:layer 1} Inv(queueFP, head, tail, next);
+ensures {:layer 1} Inv(queueFP, head, tail, next);
+{
+  var c: Ref;
+
+  yield;
+  assert {:layer 1} Inv(queueFP, head, tail, next);
+
+  x := 0;
+  call c := Readhead();
+
+  yield;
+  assert {:layer 1} Inv(queueFP, head, tail, next);
+  assert {:layer 1} (UsedFP[c] && Btwn(next, c, c, head))
+    || Btwn(next, head, c, null);
+
+  while (c != null)
+    invariant {:layer 1} Inv(queueFP, head, tail, next);
+    invariant {:layer 1} (UsedFP[c] && Btwn(next, c, c, head))
+      || Btwn(next, head, c, null);
+  {
+    x := x + 1;
+    call c := Load(c); // TODO: load doesn't return next if not in dom!?
+    yield;
+    assert {:layer 1} Inv(queueFP, head, tail, next);
+    assert {:layer 1} (UsedFP[c] && Btwn(next, c, c, head))
+                        || Btwn(next, head, c, null); // AtomicTransferToqueue breaks this, but it shouldn't!?
+  }
+  yield;
+  assert {:layer 1} Inv(queueFP, head, tail, next);
+  return;
+}
+*/
