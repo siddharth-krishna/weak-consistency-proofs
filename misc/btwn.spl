@@ -8,26 +8,9 @@
 // 
 // ----------------------------------------
 
-struct Ref {}
-
-type Heap
-
-pure function next(h: Heap) returns (f: Map<Ref, Ref>)
-pure function dom(h: Heap) returns (f: Map<Ref, Bool>)
-
-pure function EmptyHeap() returns (h: Heap)
-  ensures (forall x: Ref :: !dom(EmptyHeap())[x])
-
-pure function Add(h: Heap, l: Ref, v: Ref) returns (h: Heap)
-  ensures (forall h: Heap, l: Ref, v: Ref ::
-    dom(Add(h, l, v)) == dom(h)[l:=true] && next(Add(h, l, v)) == next(h)[l := v])
-
-pure function Remove(h: Heap, l: Ref) returns (h: Heap)
-  ensures (forall h: Heap, l: Ref ::
-    dom(Remove(h, l)) == dom(h)[l:=false] && next(Remove(h, l)) == next(h))
-
-var queue: Heap
-var Used: Map<Ref, Bool>
+struct Ref {
+  var next: Ref
+}
 
 var head: Ref
 var tail: Ref
@@ -49,37 +32,37 @@ define Union(x, y) { x ++ y }
 define Equal(x, y) { x == y }
 
 
-pure predicate Inv(queue: Heap, head: Ref, tail: Ref)
+pure predicate Inv(next: Map<Node, Node>, head: Ref, tail: Ref)
 {
-  Btwn(next(queue), head, head, null)
-    && Btwn(next(queue), head, tail, null)
-    // && Equal(BtwnSet(next(queue), head, null),
+  Btwn(next, head, head, null)
+    && Btwn(next, head, tail, null)
+    // && Equal(BtwnSet(next, head, null),
     //          Union(Singleton(null), dom(queue)))
-    // && (forall l: Ref :: {Btwn(next(queue), head, l, null)} known(l) ==>
-    //     (Btwn(next(queue), head, l, null) <==> l == null || dom(queue)[l]))
+    // && (forall l: Ref :: {Btwn(next, head, l, null)} known(l) ==>
+    //     (Btwn(next, head, l, null) <==> l == null || dom(queue)[l]))
     && tail != null
-    // && known(head) && known(tail) && known(null) && knownF(next(queue))
+    // && known(head) && known(tail) && known(null) && knownF(next)
 }
 
 
-procedure test1(x: Ref, t: Ref, tn: Ref, t_Heap: Heap, x_Heap: Heap)
-  requires Inv(queue, head, tail);
-  requires dom(x_Heap)[x] && next(x_Heap)[x] == null;
-  // requires known(x) && known(t) && known(tn) && knownF(next(queue)) && knownF(next(t_Heap));
-  requires dom(t_Heap) == dom(x_Heap);
-  requires next(t_Heap)[x] == null;
-  requires t != null && (Btwn(next(queue), head, t, null)
+procedure test1(x: Ref, t: Ref, tn: Ref)
+  requires Inv(next, head, tail);
+  requires next[x] == null;
+  // requires known(x) && known(t) && known(tn) && knownF(next) && knownF(next(t_Heap));
+  // requires dom(t_Heap) == dom(x_Heap);
+  requires next[x] == null;
+  requires t != null && (Btwn(next, head, t, null)
       || Used[t]);
-  requires next(queue)[t] == null ==> t == tail;
+  requires next[t] == null ==> t == tail;
 
-  ensures Inv(queue, head, tail);
+  ensures Inv(next, head, tail);
 {
   var g: Bool;
   var out_heap: Heap;
   assume tn == null;
 
   // g, out_heap := TransferToqueue(t, tn, x, t_Heap);
-  if (next(queue)[t] == tn) {
+  if (next[t] == tn) {
     queue := Add(queue, t, x);
     // queue := Add(queue, x, next(t_Heap)[x]); // TODO this TOs. Why?
     queue := Add(queue, x, null);
@@ -91,10 +74,10 @@ procedure test1(x: Ref, t: Ref, tn: Ref, t_Heap: Heap, x_Heap: Heap)
   if (!g) {
     assume false;
   } else {
-  // assert known(head) && known(tail) && known(null) && knownF(next(queue));
-  assert Btwn(next(queue), head, head, null);
-  assert Btwn(next(queue), head, tail, null);
-  // assert Equal(BtwnSet(next(queue), head, null),
+  // assert known(head) && known(tail) && known(null) && knownF(next);
+  assert Btwn(next, head, head, null);
+  assert Btwn(next, head, tail, null);
+  // assert Equal(BtwnSet(next, head, null),
   //            Union(Singleton(null), dom(queue)));
   }
 }

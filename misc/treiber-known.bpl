@@ -2,33 +2,29 @@
 // An adaptation of the Treiber stack example from CIVL,
 // using the Grasshopper reachability axioms and the
 // known() trick to control instantiations.
+//
+// Also trying to use FP sets for linearity instead of Heaps and dom(Heap).
+// Trouble then is that push does not have an atomic equivalent since
+// it modifies next many times. TODO have abstract stack on layer 2!
 // ----------------------------------------
 
 type Ref;
 const null: Ref;
 
-type Heap;
-function {:linear "Node"} dom(Heap): [Ref]bool;
-function next(Heap): [Ref]Ref;
 function {:builtin "MapConst"} MapConstBool(bool) : [Ref]bool;
 
-function EmptyHeap(): (Heap);
-axiom (dom(EmptyHeap()) == MapConstBool(false));
+function EmptyHeap(): ([Ref]bool);
+axiom (EmptyHeap() == MapConstBool(false));
 
-function Add(h: Heap, l: Ref, v: Ref): (Heap);
-axiom (forall h: Heap, l: Ref, v: Ref :: dom(Add(h, l, v)) == dom(h)[l:=true] && next(Add(h, l, v)) == next(h)[l := v]);
+function Add(h: [Ref]bool, l: Ref): ([Ref]bool);
+axiom (forall h: [Ref]bool, l: Ref :: Add(h, l) == h[l:=true]);
 
-function Remove(h: Heap, l: Ref): (Heap);
-axiom (forall h: Heap, l: Ref :: dom(Remove(h, l)) == dom(h)[l:=false] && next(Remove(h, l)) == next(h));
+function Remove(h: [Ref]bool, l: Ref): ([Ref]bool);
+axiom (forall h: [Ref]bool, l: Ref :: Remove(h, l) == h[l:=false]);
 
 // Linearity stuff:
 
-// TODO is this one ever used?
-function {:inline} {:linear "Node"} NodeCollector(x: Ref) : [Ref]bool
-{
-  MapConstBool(false)[x := true]
-}
-function {:inline} {:linear "Node"} NodeSetCollector(x: [Ref]bool) : [Ref]bool
+function {:inline} {:linear "FP"} NodeSetCollector(x: [Ref]bool) : [Ref]bool
 {
   x
 }
@@ -102,56 +98,64 @@ axiom (forall f: [Ref]Ref, x: Ref, y: Ref, z: Ref, u: Ref, v: Ref :: {f[u := v],
 
 // ---------- Shared state and invariant
 
-var {:linear "Node"} {:layer 0,2} Stack: Heap;
-var {:linear "Node"} {:layer 0,2} Used: [Ref]bool;
+// Fields:
+var {:layer 0, 1} next: [Ref]Ref;
 
-var {:layer 0,2} TopOfStack: Ref;
+var {:linear "FP"} {:layer 0, 1} StackFP: [Ref]bool;
+var {:linear "FP"} {:layer 0, 1} UsedFP: [Ref]bool;
+
+var {:layer 0, 1} TopOfStack: Ref;
 
 
-function {:inline} Inv(TopOfStack: Ref, Stack: Heap) : (bool)
+function {:inline} Inv(TopOfStack: Ref, StackFP: [Ref]bool, next: [Ref]Ref) : (bool)
 {
-  Btwn(next(Stack), TopOfStack, TopOfStack, null)
-    && (forall l: Ref :: {Btwn(next(Stack), TopOfStack, l, null)} known(l) ==>
-       (Btwn(next(Stack), TopOfStack, l, null)
-       ==> l == null || dom(Stack)[l]))
-    && known(TopOfStack) && known(null) && knownF(next(Stack))
+  Btwn(next, TopOfStack, TopOfStack, null)
+    && (forall l: Ref :: {Btwn(next, TopOfStack, l, null)} known(l) ==>
+       (Btwn(next, TopOfStack, l, null)
+       ==> l == null || StackFP[l]))
+    && known(TopOfStack) && known(null) && knownF(next)
 }
 
 
 // ---------- Primitives for manipulating ghost state
 
 procedure {:atomic} {:layer 1} AtomicReadTopOfStack() returns (v:Ref)
-{ v := TopOfStack; assume known(v); }
+{ v := TopOfStack; }
 
 procedure {:yields} {:layer 0} {:refines "AtomicReadTopOfStack"} ReadTopOfStack() returns (v:Ref);
 
 procedure {:right} {:layer 1} AtomicLoad(i:Ref) returns (v:Ref)
 {
-  assert dom(Stack)[i] || Used[i];
-  if (dom(Stack)[i]) {
-    v := next(Stack)[i];
-    assume known(v);
-  }
+  assert StackFP[i] || UsedFP[i];
+  // FP can't be passed in because it's a shared variable..
+  v := next[i];
+  assume known(v);
 }
 
 procedure {:yields} {:layer 0} {:refines "AtomicLoad"} Load(i:Ref) returns (v:Ref);
 
-procedure {:both} {:layer 1} AtomicStore({:linear_in "Node"} l_in:Heap, i:Ref, v:Ref) returns ({:linear "Node"} l_out:Heap)
-{ assert dom(l_in)[i]; l_out := Add(l_in, i, v);
-  assume knownF(next(l_in)); }
-
-procedure {:yields} {:layer 0} {:refines "AtomicStore"} Store({:linear_in "Node"} l_in:Heap, i:Ref, v:Ref) returns ({:linear "Node"} l_out:Heap);
-
-procedure {:atomic} {:layer 1} AtomicTransferToStack(oldVal: Ref, newVal: Ref, {:linear_in "Node"} l_in:Heap) returns (r: bool, {:linear "Node"} l_out:Heap)
-modifies TopOfStack, Stack;
+procedure {:both} {:layer 1} AtomicStore({:linear "FP"} FP:[Ref]bool,
+    i:Ref, v:Ref)
+  modifies next;
 {
-  assert dom(l_in)[newVal];
+  assert FP[i];
+  next := next[i := v];
+  assume knownF(next);
+}
+
+procedure {:yields} {:layer 0} {:refines "AtomicStore"}
+  Store({:linear "FP"} FP:[Ref]bool, i:Ref, v:Ref);
+
+procedure {:atomic} {:layer 1} AtomicTransferToStack(oldVal: Ref, newVal: Ref, {:linear_in "FP"} l_in:[Ref]bool) returns (r: bool, {:linear "FP"} l_out:[Ref]bool)
+modifies TopOfStack, StackFP;
+{
+  assert l_in[newVal];
   if (oldVal == TopOfStack) {
     TopOfStack := newVal;
     l_out := EmptyHeap();
-    Stack := Add(Stack, newVal, next(l_in)[newVal]);
-    assume known(oldVal) && known(TopOfStack) && known(next(l_in)[newVal])
-      && knownF(next(Stack));
+    StackFP := Add(StackFP, newVal);
+    assume known(oldVal) && known(TopOfStack) && known(next[newVal])
+      && knownF(next);
     r := true;
   } else {
     l_out := l_in;
@@ -159,16 +163,16 @@ modifies TopOfStack, Stack;
   }
 }
 
-procedure {:yields} {:layer 0} {:refines "AtomicTransferToStack"} TransferToStack(oldVal: Ref, newVal: Ref, {:linear_in "Node"} l_in:Heap) returns (r: bool, {:linear "Node"} l_out:Heap);
+procedure {:yields} {:layer 0} {:refines "AtomicTransferToStack"} TransferToStack(oldVal: Ref, newVal: Ref, {:linear_in "FP"} l_in:[Ref]bool) returns (r: bool, {:linear "FP"} l_out:[Ref]bool);
 
 procedure {:atomic} {:layer 1} AtomicTransferFromStack(oldVal: Ref, newVal: Ref) returns (r: bool)
-modifies TopOfStack, Used, Stack;
+modifies TopOfStack, UsedFP, StackFP;
 {
   if (oldVal == TopOfStack) {
     TopOfStack := newVal;
-    Used[oldVal] := true;
-    Stack := Remove(Stack, oldVal);
-    assume known(oldVal) && known(TopOfStack) && knownF(next(Stack));
+    UsedFP[oldVal] := true;
+    StackFP := Remove(StackFP, oldVal);
+    assume known(oldVal) && known(TopOfStack) && knownF(next);
     r := true;
   }
   else {
@@ -181,88 +185,78 @@ procedure {:yields} {:layer 0} {:refines "AtomicTransferFromStack"} TransferFrom
 
 // ---------- Stack methods:
 
-procedure {:atomic} {:layer 2} atomic_push(x: Ref, {:linear_in "Node"} x_Heap: Heap)
-modifies Stack, TopOfStack;
+procedure {:atomic} {:layer 2} atomic_push(x: Ref, {:linear_in "FP"} x_Heap: [Ref]bool)
+modifies next, StackFP, TopOfStack;
 {
-  Stack := Add(Stack, x, TopOfStack);
-  TopOfStack := x;
-  assume known(TopOfStack) && knownF(next(Stack));
+  // StackFP := Add(StackFP, x);
+  // TopOfStack := x;
 }
 
-procedure {:yields} {:layer 1} {:refines "atomic_push"} push(x: Ref, {:linear_in "Node"} x_Heap: Heap)
-requires {:layer 1} dom(x_Heap)[x];
-requires {:layer 1} Inv(TopOfStack, Stack);
-ensures {:layer 1} Inv(TopOfStack, Stack);
+procedure {:yields} {:layer 1} {:refines "atomic_push"} push(x: Ref, {:linear_in "FP"} x_Heap: [Ref]bool)
+requires {:layer 1} x_Heap[x];
+requires {:layer 1} Inv(TopOfStack, StackFP, next);
+ensures {:layer 1} Inv(TopOfStack, StackFP, next);
 {
   var t: Ref;
   var g: bool;
-  var {:linear "Node"} t_Heap: Heap;
+  var {:linear "FP"} t_Heap: [Ref]bool;
 
   yield;
-  assert {:layer 1} known(x) && known(t);
-  assert {:layer 1} Inv(TopOfStack, Stack);
+  assert {:layer 1} Inv(TopOfStack, StackFP, next);
   t_Heap := x_Heap;
   while (true)
-    invariant {:layer 1} dom(t_Heap) == dom(x_Heap) && known(x) && known(t);
-    invariant {:layer 1} Inv(TopOfStack, Stack);
+    invariant {:layer 1} t_Heap == x_Heap && known(x);
+    invariant {:layer 1} Inv(TopOfStack, StackFP, next);
   {
     call t := ReadTopOfStack();
     yield;
-    assert {:layer 1} known(x) && known(t);
-    assert {:layer 1} Inv(TopOfStack, Stack);
-    assert {:layer 1} dom(t_Heap) == dom(x_Heap);
-    call t_Heap := Store(t_Heap, x, t);
+    assert {:layer 1} Inv(TopOfStack, StackFP, next);
+    assert {:layer 1} t_Heap == x_Heap;
+    call Store(t_Heap, x, t);
     call g, t_Heap := TransferToStack(t, x, t_Heap);
-    assert {:layer 1} known(x) && known(t);
     if (g) {
       break;
     }
     yield;
-    assert {:layer 1} known(x) && known(t);
-    assert {:layer 1} dom(t_Heap) == dom(x_Heap);
-    assert {:layer 1} Inv(TopOfStack, Stack);
+    assert {:layer 1} t_Heap == x_Heap;
+    assert {:layer 1} Inv(TopOfStack, StackFP, next);
   }
   yield;
-  assert {:layer 1} known(x) && known(t);
-  assert {:expand} {:layer 1} Inv(TopOfStack, Stack);
+  assert {:expand} {:layer 1} Inv(TopOfStack, StackFP, next);
 }
 
 procedure {:atomic} {:layer 2} atomic_pop() returns (t: Ref)
-modifies Used, TopOfStack, Stack;
-{ assume TopOfStack != null; t := TopOfStack; Used[t] := true; TopOfStack := next(Stack)[t]; Stack := Remove(Stack, t); }
+modifies UsedFP, TopOfStack, StackFP;
+{
+  // assume TopOfStack != null; t := TopOfStack; UsedFP[t] := true; TopOfStack := next[t]; StackFP := Remove(StackFP, t);
+}
 
 procedure {:yields} {:layer 1} {:refines "atomic_pop"} pop() returns (t: Ref)
-requires {:layer 1} Inv(TopOfStack, Stack);
-ensures {:layer 1} Inv(TopOfStack, Stack);
+requires {:layer 1} Inv(TopOfStack, StackFP, next);
+ensures {:layer 1} Inv(TopOfStack, StackFP, next);
 {
   var g: bool;
   var x: Ref;
 
   yield;
-  assert {:layer 1} known(x) && known(t);
-  assert {:layer 1} Inv(TopOfStack, Stack);
+  assert {:layer 1} Inv(TopOfStack, StackFP, next);
   while (true)
-    invariant {:layer 1} known(x) && known(t);
-    invariant {:layer 1} Inv(TopOfStack, Stack);
+    invariant {:layer 1} Inv(TopOfStack, StackFP, next);
   {
     call t := ReadTopOfStack();
     yield;
-    assert {:layer 1} known(x) && known(t);
-    assert {:layer 1} Inv(TopOfStack, Stack);
-    assert {:layer 1} t == null || dom(Stack)[t] || Used[t];
+    assert {:layer 1} Inv(TopOfStack, StackFP, next);
+    assert {:layer 1} t == null || StackFP[t] || UsedFP[t];
     if (t != null) {
       call x := Load(t);
       call g := TransferFromStack(t, x);
-      assert {:layer 1} known(x) && known(t);
       if (g) {
         break;
       }
     }
     yield;
-    assert {:layer 1} known(x) && known(t);
-    assert {:layer 1} Inv(TopOfStack, Stack);
+    assert {:layer 1} Inv(TopOfStack, StackFP, next);
   }
   yield;
-  assert {:layer 1} known(x) && known(t);
-  assert {:layer 1} Inv(TopOfStack, Stack);
+  assert {:layer 1} Inv(TopOfStack, StackFP, next);
 }
