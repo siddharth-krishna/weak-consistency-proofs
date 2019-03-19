@@ -139,17 +139,26 @@ var {:linear "FP"} {:layer 0, 1} UsedFP: [Ref]bool;
 
 var {:layer 0, 1} head: Ref;
 var {:layer 0, 1} tail: Ref;
+var {:layer 0, 1} start: Ref; // The first head. To define UsedFP
 
 
-function {:inline} Inv(queueFP: [Ref]bool, UsedFP: [Ref]bool, head: Ref, tail: Ref, next: [Ref]Ref) : (bool)
+function {:inline} Inv(queueFP: [Ref]bool, UsedFP: [Ref]bool, start: Ref, head: Ref, tail: Ref, next: [Ref]Ref) : (bool)
 {
+  // There is a list from head to null
   Btwn(next, head, head, null)
-    && Btwn(next, head, tail, null)
-    && Equal(BtwnSet(next, head, null),
-             Union(Singleton(null), queueFP))
-    && (forall x: Ref :: Btwn(next, x, x, head) ==> UsedFP[x])
-    && tail != null
-    && known(head) && known(tail) && known(null) && knownF(next)
+    // && Equal(BtwnSet(next, head, null),
+    //          Union(Singleton(null), queueFP))
+    // TODO add triggers to these. Also, remove set theory if no longer needed!
+    && (forall x: Ref :: known(x) ==>
+      (queueFP[x] <==> (Btwn(next, head, x, null) && x != null)))
+    // Tail is on that list
+    && Btwn(next, head, tail, null) && tail != null
+    // There is also a list from start to head
+    && Btwn(next, start, start, head)
+    && (forall x: Ref :: known(x) ==>
+      (UsedFP[x] <==> (Btwn(next, start, x, head) && x != head)))
+    // Terms needed for axiom triggers
+    && known(start) && known(head) && known(tail) && known(null) && knownF(next)
 }
 
 
@@ -241,32 +250,32 @@ procedure {:atomic} {:layer 2} atomic_pop() returns (t: Ref)
 }
 
 procedure {:yields} {:layer 1} {:refines "atomic_pop"} pop() returns (h: Ref)
-requires {:layer 1} Inv(queueFP, UsedFP, head, tail, next);
-ensures {:layer 1} Inv(queueFP, UsedFP, head, tail, next);
+requires {:layer 1} Inv(queueFP, UsedFP, start, head, tail, next);
+ensures {:layer 1} Inv(queueFP, UsedFP, start, head, tail, next);
 {
   var g: bool;
   var t, x: Ref;
 
   yield;
-  assert {:layer 1} Inv(queueFP, UsedFP, head, tail, next);
+  assert {:layer 1} Inv(queueFP, UsedFP, start, head, tail, next);
   while (true)
-    invariant {:layer 1} Inv(queueFP, UsedFP, head, tail, next);
+    invariant {:layer 1} Inv(queueFP, UsedFP, start, head, tail, next);
   {
     call h := Readhead();
     yield;
-    assert {:layer 1} Inv(queueFP, UsedFP, head, tail, next);
+    assert {:layer 1} Inv(queueFP, UsedFP, start, head, tail, next);
     assert {:layer 1} h == head || UsedFP[h];
 
     call t := Readtail();
     yield;
-    assert {:layer 1} Inv(queueFP, UsedFP, head, tail, next);
+    assert {:layer 1} Inv(queueFP, UsedFP, start, head, tail, next);
     assert {:layer 1} h == head || UsedFP[h];
     assert {:layer 1} (h == head && h != t ==> head != tail);
 
     if (h != t) {
       call x := Load(h);
       yield;
-      assert {:layer 1} Inv(queueFP, UsedFP, head, tail, next);
+      assert {:layer 1} Inv(queueFP, UsedFP, start, head, tail, next);
       assert {:layer 1} h == head || UsedFP[h];
       assert {:layer 1} (h == head && h != t ==> x == next[head]);
       assert {:layer 1} (h == head && h != t ==> head != tail);
@@ -277,10 +286,10 @@ ensures {:layer 1} Inv(queueFP, UsedFP, head, tail, next);
       }
     }
     yield;
-    assert {:layer 1} Inv(queueFP, UsedFP, head, tail, next);
+    assert {:layer 1} Inv(queueFP, UsedFP, start, head, tail, next);
   }
   yield;
-  assert {:expand} {:layer 1} Inv(queueFP, UsedFP, head, tail, next);
+  assert {:expand} {:layer 1} Inv(queueFP, UsedFP, start, head, tail, next);
 }
 
 
@@ -297,27 +306,27 @@ procedure {:atomic} {:layer 2} atomic_push(x: Ref,
 
 procedure {:yields} {:layer 1} {:refines "atomic_push"} push(x: Ref, {:linear_in "FP"} x_Heap: [Ref]bool)
   requires {:layer 1} x_Heap[x] && next[x] == null && !Btwn(next, head, x, null);
-  requires {:layer 1} Inv(queueFP, UsedFP, head, tail, next);
-  ensures {:layer 1} Inv(queueFP, UsedFP, head, tail, next);
+  requires {:layer 1} Inv(queueFP, UsedFP, start, head, tail, next);
+  ensures {:layer 1} Inv(queueFP, UsedFP, start, head, tail, next);
 {
   var t, tn: Ref;
   var g: bool;
   var {:linear "FP"} t_Heap: [Ref]bool;
 
   yield;
-  assert {:layer 1} Inv(queueFP, UsedFP, head, tail, next);
+  assert {:layer 1} Inv(queueFP, UsedFP, start, head, tail, next);
   assert {:layer 1} !Btwn(next, head, x, null);
   assert {:layer 1} x_Heap[x] && next[x] == null;
   t_Heap := x_Heap;
   while (true)
-    invariant {:layer 1} Inv(queueFP, UsedFP, head, tail, next);
+    invariant {:layer 1} Inv(queueFP, UsedFP, start, head, tail, next);
     invariant {:layer 1} !Btwn(next, head, x, null);
     invariant {:layer 1} t_Heap == x_Heap;
     invariant {:layer 1} x_Heap[x] && next[x] == null;
   {
     call t := Readtail();
     yield;
-    assert {:layer 1} Inv(queueFP, UsedFP, head, tail, next);
+    assert {:layer 1} Inv(queueFP, UsedFP, start, head, tail, next);
     assert {:layer 1} !Btwn(next, head, x, null);
     assert {:layer 1} t_Heap == x_Heap;
     assert {:layer 1} x_Heap[x] && next[x] == null;
@@ -327,7 +336,7 @@ procedure {:yields} {:layer 1} {:refines "atomic_push"} push(x: Ref, {:linear_in
 
     call tn := Load(t);
     yield;
-    assert {:layer 1} Inv(queueFP, UsedFP, head, tail, next);
+    assert {:layer 1} Inv(queueFP, UsedFP, start, head, tail, next);
     assert {:layer 1} !Btwn(next, head, x, null);
     assert {:layer 1} t_Heap == x_Heap;
     assert {:layer 1} x_Heap[x] && next[x] == null;
@@ -342,13 +351,13 @@ procedure {:yields} {:layer 1} {:refines "atomic_push"} push(x: Ref, {:linear_in
       }
     } // TODO else cas tail
     yield;
-    assert {:layer 1} Inv(queueFP, UsedFP, head, tail, next);
+    assert {:layer 1} Inv(queueFP, UsedFP, start, head, tail, next);
     assert {:layer 1} !Btwn(next, head, x, null);
     assert {:layer 1} t_Heap == x_Heap;
     assert {:layer 1} x_Heap[x] && next[x] == null;
   }
   yield;
-  assert {:expand} {:layer 1} Inv(queueFP, UsedFP, head, tail, next);
+  assert {:expand} {:layer 1} Inv(queueFP, UsedFP, start, head, tail, next);
 }
 
 
@@ -356,36 +365,37 @@ procedure {:atomic} {:layer 2} atomic_size() returns (x: int)
 {}
 
 procedure {:yields} {:layer 1} {:refines "atomic_size"} size() returns (x: int)
-requires {:layer 1} Inv(queueFP, UsedFP, head, tail, next);
-ensures {:layer 1} Inv(queueFP, UsedFP, head, tail, next);
+requires {:layer 1} Inv(queueFP, UsedFP, start, head, tail, next);
+ensures {:layer 1} Inv(queueFP, UsedFP, start, head, tail, next);
 {
   var c: Ref;
   var c1: Ref;
 
   yield;
-  assert {:layer 1} Inv(queueFP, UsedFP, head, tail, next);
+  assert {:layer 1} Inv(queueFP, UsedFP, start, head, tail, next);
 
   x := 0;
   call c := Readhead();
 
   yield;
-  assert {:layer 1} Inv(queueFP, UsedFP, head, tail, next);
+  assert {:layer 1} Inv(queueFP, UsedFP, start, head, tail, next);
   assert {:layer 1} known(c) && ((UsedFP[c] && Btwn(next, c, c, head))
     || Btwn(next, head, c, null));
 
   while (c != null)
-    invariant {:layer 1} Inv(queueFP, UsedFP, head, tail, next);
+    invariant {:layer 1} Inv(queueFP, UsedFP, start, head, tail, next);
     invariant {:layer 1} known(c) && ((UsedFP[c] && Btwn(next, c, c, head))
       || Btwn(next, head, c, null));
   {
     x := x + 1;
     call c1 := Load(c);
     yield;
-    assert {:layer 1} Inv(queueFP, UsedFP, head, tail, next);
+    assert {:layer 1} Inv(queueFP, UsedFP, start, head, tail, next);
     assert {:layer 1} known(c) && ((UsedFP[c] && Btwn(next, c, c, head))
                         || Btwn(next, head, c, null));
   }
   yield;
-  assert {:layer 1} Inv(queueFP, UsedFP, head, tail, next);
+  assert {:layer 1} false;  // TODO why is this unreachable?
+  assert {:layer 1} Inv(queueFP, UsedFP, start, head, tail, next);
   return;
 }
