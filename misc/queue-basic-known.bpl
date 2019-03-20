@@ -369,7 +369,6 @@ requires {:layer 1} Inv(queueFP, UsedFP, start, head, tail, next);
 ensures {:layer 1} Inv(queueFP, UsedFP, start, head, tail, next);
 {
   var c: Ref;
-  var c1: Ref;
 
   yield;
   assert {:layer 1} Inv(queueFP, UsedFP, start, head, tail, next);
@@ -379,23 +378,19 @@ ensures {:layer 1} Inv(queueFP, UsedFP, start, head, tail, next);
 
   yield;
   assert {:layer 1} Inv(queueFP, UsedFP, start, head, tail, next);
-  assert {:layer 1} known(c) && ((UsedFP[c] && Btwn(next, c, c, head))
-    || Btwn(next, head, c, null));
+  assert {:layer 1} known(c) && (UsedFP[c] || queueFP[c]);
 
   while (c != null)
     invariant {:layer 1} Inv(queueFP, UsedFP, start, head, tail, next);
-    invariant {:layer 1} known(c) && ((UsedFP[c] && Btwn(next, c, c, head))
-      || Btwn(next, head, c, null));
+    invariant {:layer 1} known(c) && (UsedFP[c] || queueFP[c] || c == null);
   {
     x := x + 1;
-    call c1 := Load(c);
+    call c := Load(c);
     yield;
     assert {:layer 1} Inv(queueFP, UsedFP, start, head, tail, next);
-    assert {:layer 1} known(c) && ((UsedFP[c] && Btwn(next, c, c, head))
-                        || Btwn(next, head, c, null));
+    assert {:layer 1} known(c) && (UsedFP[c] || queueFP[c] || c == null);
   }
   yield;
-  assert {:layer 1} false;  // TODO why is this unreachable?
   assert {:layer 1} Inv(queueFP, UsedFP, start, head, tail, next);
   return;
 }
