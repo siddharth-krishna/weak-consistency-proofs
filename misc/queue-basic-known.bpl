@@ -56,7 +56,7 @@ axiom(forall f: [Ref]Ref, x: Ref, z: Ref :: {BtwnSet(f, x, z)} Btwn(f, z, z, z))
 //////////////////////////
 
 // read null
-axiom (forall f: [Ref]Ref :: f[null] == null);
+// axiom (forall f: [Ref]Ref :: f[null] == null);  // TODO UNSOUND!!! FIX!
 
 // reflexive
 axiom(forall f: [Ref]Ref, x: Ref :: Btwn(f, x, x, x));
@@ -114,7 +114,15 @@ var {:layer 0, 1} tail: Ref;
 var {:layer 0, 1} start: Ref; // The first head. To define UsedFP
 
 
-function {:inline} Inv(queueFP: [Ref]bool, UsedFP: [Ref]bool, start: Ref, head: Ref, tail: Ref, next: [Ref]Ref) : (bool)
+// Abstract state
+var {:layer 1,2} absArray: [int]Ref;  // TODO add keys (right now uses Ref)
+var {:layer 1,2} absHead: int;
+var {:layer 1,2} absTail: int;
+
+
+function {:inline} Inv(queueFP: [Ref]bool, UsedFP: [Ref]bool, start: Ref,
+    head: Ref, tail: Ref, next: [Ref]Ref,
+    absArray: [int]Ref, absHead: int) : (bool)
 {
   // There is a list from head to null
   Btwn(next, head, head, null)
@@ -129,10 +137,13 @@ function {:inline} Inv(queueFP: [Ref]bool, UsedFP: [Ref]bool, start: Ref, head: 
       (UsedFP[x] <==> (Btwn(next, start, x, head) && x != head)))
     // Terms needed for axiom triggers
     && known(start) && known(head) && known(tail) && known(null) && knownF(next)
+    // Relate abstract state to concrete state:  // TODO CONTINUE
+    // && absArray[absHead] == head
+    // && (forall i: int :: {next[absArray[i]]} absArray[i + 1] == next[absArray[i]])
 }
 
 
-// ---------- Primitives for manipulating ghost state
+// ---------- Primitives for manipulating global state
 
 procedure {:atomic} {:layer 1} AtomicReadhead() returns (v:Ref)
 { v := head; }
@@ -205,97 +216,112 @@ procedure {:atomic} {:layer 1} AtomicTransferFromqueue(oldVal: Ref, newVal: Ref)
 procedure {:yields} {:layer 0} {:refines "AtomicTransferFromqueue"} TransferFromqueue(oldVal: Ref, newVal: Ref) returns (r: bool);
 
 
+// ---------- Primitives for manipulating logical/abstract state
+
+procedure {:layer 1} {:inline 1} intro_writeAbs(v: Ref)
+  modifies absArray;
+{
+  absArray[absTail] := v;
+}
+
+procedure {:layer 1} {:inline 1} intro_incrHead()
+  modifies absHead;
+{
+  absHead := absHead + 1;
+}
+
+procedure {:layer 1} {:inline 1} intro_incrTail()
+  modifies absTail;
+{
+  absTail := absTail + 1;
+}
+
+
 // ---------- queue methods:
 
 procedure {:atomic} {:layer 2} atomic_pop() returns (t: Ref)
-  modifies UsedFP, head, queueFP;
+  modifies absHead;
 {
-  // assume head != null;
-  // t := head;
-  // UsedFP[t] := true;
-  // head := next[t];
-  // queueFP := Remove(queueFP, t);
-  // assume known(head) && knownF(next);
+  // t := absArray[absHead]; // TODO CONTINUE: this needs extra Inv
+  absHead := absHead + 1;
 }
 
 procedure {:yields} {:layer 1} {:refines "atomic_pop"} pop() returns (h: Ref)
-requires {:layer 1} Inv(queueFP, UsedFP, start, head, tail, next);
-ensures {:layer 1} Inv(queueFP, UsedFP, start, head, tail, next);
+  requires {:layer 1} Inv(queueFP, UsedFP, start, head, tail, next, absArray, absHead);
+  ensures {:layer 1} Inv(queueFP, UsedFP, start, head, tail, next, absArray, absHead);
 {
   var g: bool;
   var t, x: Ref;
 
   yield;
-  assert {:layer 1} Inv(queueFP, UsedFP, start, head, tail, next);
+  assert {:layer 1} Inv(queueFP, UsedFP, start, head, tail, next, absArray, absHead);
   while (true)
-    invariant {:layer 1} Inv(queueFP, UsedFP, start, head, tail, next);
+    invariant {:layer 1} Inv(queueFP, UsedFP, start, head, tail, next, absArray, absHead);
   {
     call h := Readhead();
     yield;
-    assert {:layer 1} Inv(queueFP, UsedFP, start, head, tail, next);
+    assert {:layer 1} Inv(queueFP, UsedFP, start, head, tail, next, absArray, absHead);
     assert {:layer 1} h == head || UsedFP[h];
 
     call t := Readtail();
     yield;
-    assert {:layer 1} Inv(queueFP, UsedFP, start, head, tail, next);
+    assert {:layer 1} Inv(queueFP, UsedFP, start, head, tail, next, absArray, absHead);
     assert {:layer 1} h == head || UsedFP[h];
     assert {:layer 1} (h == head && h != t ==> head != tail);
 
     if (h != t) {
       call x := Load(h);
       yield;
-      assert {:layer 1} Inv(queueFP, UsedFP, start, head, tail, next);
+      assert {:layer 1} Inv(queueFP, UsedFP, start, head, tail, next, absArray, absHead);
       assert {:layer 1} h == head || UsedFP[h];
       assert {:layer 1} (h == head && h != t ==> x == next[head]);
       assert {:layer 1} (h == head && h != t ==> head != tail);
 
       call g := TransferFromqueue(h, x);
       if (g) {
+        // Linearization point. Update abstract state:
+        call intro_incrHead();
         break;
       }
     }
     yield;
-    assert {:layer 1} Inv(queueFP, UsedFP, start, head, tail, next);
+    assert {:layer 1} Inv(queueFP, UsedFP, start, head, tail, next, absArray, absHead);
   }
   yield;
-  assert {:expand} {:layer 1} Inv(queueFP, UsedFP, start, head, tail, next);
+  assert {:expand} {:layer 1} Inv(queueFP, UsedFP, start, head, tail, next, absArray, absHead);
 }
 
 
-procedure {:atomic} {:layer 2} atomic_push(x: Ref,
- {:linear_in "FP"} xFP: [Ref]bool)
- modifies queueFP, tail;
+procedure {:atomic} {:layer 2} atomic_push(x: Ref, {:linear_in "FP"} xFP: [Ref]bool)
+  modifies absTail, absArray;
 {
-  // if (next[tail] == null) {
-  //   queueFP := Add(queueFP, tail, x);
-  //   queueFP := Add(queueFP, x, null);
-  // }
-  // tail := x;
+  absTail := absTail + 1;
+  absArray[absTail] := x;
 }
 
 procedure {:yields} {:layer 1} {:refines "atomic_push"} push(x: Ref, {:linear_in "FP"} xFP: [Ref]bool)
   requires {:layer 1} xFP[x] && next[x] == null;
   requires {:layer 1} !Btwn(next, head, x, null);  // TODO get from linearity
-  requires {:layer 1} Inv(queueFP, UsedFP, start, head, tail, next);
-  ensures {:layer 1} Inv(queueFP, UsedFP, start, head, tail, next);
+  requires {:layer 1} Inv(queueFP, UsedFP, start, head, tail, next, absArray, absHead);
+  ensures {:layer 1} Inv(queueFP, UsedFP, start, head, tail, next, absArray, absHead);
 {
   var t, tn: Ref;
   var g: bool;
   var {:linear "FP"} tFP: [Ref]bool;
 
   yield;
-  assert {:layer 1} Inv(queueFP, UsedFP, start, head, tail, next);
+  assert {:layer 1} Inv(queueFP, UsedFP, start, head, tail, next, absArray, absHead);
   assert {:layer 1} !Btwn(next, head, x, null);
   assert {:layer 1} xFP[x] && next[x] == null;
   tFP := xFP;
   while (true)
-    invariant {:layer 1} Inv(queueFP, UsedFP, start, head, tail, next);
+    invariant {:layer 1} Inv(queueFP, UsedFP, start, head, tail, next, absArray, absHead);
     invariant {:layer 1} known(x) && !Btwn(next, head, x, null);
     invariant {:layer 1} tFP == xFP && xFP[x] && next[x] == null;
   {
     call t := Readtail();
     yield;
-    assert {:layer 1} Inv(queueFP, UsedFP, start, head, tail, next);
+    assert {:layer 1} Inv(queueFP, UsedFP, start, head, tail, next, absArray, absHead);
     assert {:layer 1} !Btwn(next, head, x, null);
     assert {:layer 1} tFP == xFP && xFP[x] && next[x] == null;
     assert {:layer 1} t != null && (queueFP[t] || UsedFP[t]);
@@ -303,7 +329,7 @@ procedure {:yields} {:layer 1} {:refines "atomic_push"} push(x: Ref, {:linear_in
 
     call tn := Load(t);
     yield;
-    assert {:layer 1} Inv(queueFP, UsedFP, start, head, tail, next);
+    assert {:layer 1} Inv(queueFP, UsedFP, start, head, tail, next, absArray, absHead);
     assert {:layer 1} !Btwn(next, head, x, null);
     assert {:layer 1} tFP == xFP && xFP[x] && next[x] == null;
     assert {:layer 1} t != null && (queueFP[t] || UsedFP[t]);
@@ -312,16 +338,19 @@ procedure {:yields} {:layer 1} {:refines "atomic_push"} push(x: Ref, {:linear_in
     if (tn == null) {
       call g, tFP := TransferToqueue(t, tn, x, tFP);
       if (g) {
+        // Linearization point. Update abstract state:
+        call intro_incrTail();
+        call intro_writeAbs(x);
         break;
       }
     } // TODO else cas tail
     yield;
-    assert {:layer 1} Inv(queueFP, UsedFP, start, head, tail, next);
+    assert {:layer 1} Inv(queueFP, UsedFP, start, head, tail, next, absArray, absHead);
     assert {:layer 1} !Btwn(next, head, x, null);
     assert {:layer 1} tFP == xFP && xFP[x] && next[x] == null;
   }
   yield;
-  assert {:expand} {:layer 1} Inv(queueFP, UsedFP, start, head, tail, next);
+  assert {:expand} {:layer 1} Inv(queueFP, UsedFP, start, head, tail, next, absArray, absHead);
 }
 
 
@@ -329,32 +358,32 @@ procedure {:atomic} {:layer 2} atomic_size() returns (x: int)
 {}
 
 procedure {:yields} {:layer 1} {:refines "atomic_size"} size() returns (x: int)
-requires {:layer 1} Inv(queueFP, UsedFP, start, head, tail, next);
-ensures {:layer 1} Inv(queueFP, UsedFP, start, head, tail, next);
+  requires {:layer 1} Inv(queueFP, UsedFP, start, head, tail, next, absArray, absHead);
+  ensures {:layer 1} Inv(queueFP, UsedFP, start, head, tail, next, absArray, absHead);
 {
   var c: Ref;
 
   yield;
-  assert {:layer 1} Inv(queueFP, UsedFP, start, head, tail, next);
+  assert {:layer 1} Inv(queueFP, UsedFP, start, head, tail, next, absArray, absHead);
 
   x := 0;
   call c := Readhead();
 
   yield;
-  assert {:layer 1} Inv(queueFP, UsedFP, start, head, tail, next);
+  assert {:layer 1} Inv(queueFP, UsedFP, start, head, tail, next, absArray, absHead);
   assert {:layer 1} (UsedFP[c] || queueFP[c]);
 
   while (c != null)
-    invariant {:layer 1} Inv(queueFP, UsedFP, start, head, tail, next);
+    invariant {:layer 1} Inv(queueFP, UsedFP, start, head, tail, next, absArray, absHead);
     invariant {:layer 1} known(c) && (UsedFP[c] || queueFP[c] || c == null);
   {
     x := x + 1;
     call c := Load(c);
     yield;
-    assert {:layer 1} Inv(queueFP, UsedFP, start, head, tail, next);
+    assert {:layer 1} Inv(queueFP, UsedFP, start, head, tail, next, absArray, absHead);
     assert {:layer 1} (UsedFP[c] || queueFP[c] || c == null);
   }
   yield;
-  assert {:layer 1} Inv(queueFP, UsedFP, start, head, tail, next);
+  assert {:layer 1} Inv(queueFP, UsedFP, start, head, tail, next, absArray, absHead);
   return;
 }
