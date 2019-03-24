@@ -161,6 +161,20 @@ procedure {:atomic} {:layer 1} AtomicReadtail() returns (v:Ref)
 
 procedure {:yields} {:layer 0} {:refines "AtomicReadtail"} Readtail() returns (v:Ref);
 
+procedure {:atomic} {:layer 1} AtomicCasTail(ole: Ref, new: Ref) returns (b: bool)
+  modifies tail;
+{
+  if (tail == ole) {
+    tail := new;
+    b := true;
+  } else {
+    b := false;
+  }
+}
+
+procedure {:yields} {:layer 0} {:refines "AtomicCasTail"}
+  CasTail(ole: Ref, new: Ref) returns (b: bool);
+
 procedure {:atomic} {:layer 1} AtomicLoad(i:Ref) returns (v:Ref)
 {
   assert queueFP[i] || UsedFP[i];
@@ -340,6 +354,7 @@ procedure {:yields} {:layer 1} {:refines "atomic_push"} push(x: Ref, {:linear_in
     assert {:layer 1} tFP == xFP && xFP[x] && next[x] == null;
     assert {:layer 1} t != null && (queueFP[t] || UsedFP[t]);
     assert {:layer 1} next[t] == null ==> queueFP[t];
+    assert {:layer 1} tn != null ==> tn == next[t];
 
     if (tn == null) {
       call g, tFP := TransferToqueue(t, tn, x, tFP);
@@ -349,7 +364,9 @@ procedure {:yields} {:layer 1} {:refines "atomic_push"} push(x: Ref, {:linear_in
         call intro_writeAbs(x);
         break;
       }
-    } // TODO else cas tail
+    } else {
+      call g := CasTail(t, tn);
+    }
     yield;
     assert {:layer 1} Inv(queueFP, UsedFP, start, head, tail, next, absArray, absHead, absTail);
     assert {:layer 1} !Btwn(next, head, x, null);
