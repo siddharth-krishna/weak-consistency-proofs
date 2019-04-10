@@ -130,15 +130,14 @@ function {:inline} Inv(queueFP: [Ref]bool, UsedFP: [Ref]bool, start: Ref,
 {
   // There is a list from head to null
   Btwn(next, head, head, null)
-  // TODO add triggers to these.
-  && (forall x: Ref :: known(x) ==>
-    (queueFP[x] <==> (Btwn(next, head, x, null) && x != null)))
+  && (forall x: Ref :: {queueFP[x]}{Btwn(next, head, x, null)}
+    known(x) ==> (queueFP[x] <==> (Btwn(next, head, x, null) && x != null)))
   // Tail is on that list
   && Btwn(next, head, tail, null) && tail != null
   // There is also a list from start to head
   && Btwn(next, start, start, head)
-  && (forall x: Ref :: known(x) ==>
-    (UsedFP[x] <==> (Btwn(next, start, x, head) && x != head)))
+  && (forall x: Ref :: {UsedFP[x]}{Btwn(next, start, x, head)}
+    known(x) ==> (UsedFP[x] <==> (Btwn(next, start, x, head) && x != head)))
   // Terms needed for axiom triggers
   && known(start) && known(head) && known(tail) && known(null) && knownF(next)
   // Properties of abstract state
