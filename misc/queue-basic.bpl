@@ -154,12 +154,14 @@ function {:inline} Inv(queueFP: [Ref]bool, usedFP: [Ref]bool, start: Ref,
   && 0 <= absHead && 0 <= absTail && absHead <= absTail
   // Relate abstract state to concrete state:
   && (forall i: int :: {absRefs[i]}
-    i < 0 || absTail < i <==> absRefs[i] == null)
-  && absRefs[absHead] == head
-  && (forall i: int :: {next[absRefs[i]]} absRefs[i + 1] == next[absRefs[i]])
-  && (forall i: int :: {absArray[i], data[absRefs[i]]} absArray[i] == data[absRefs[i]])
+    i < -1 || absTail <= i <==> absRefs[i] == null)
+  && absRefs[absHead - 1] == head
+  && (forall i: int :: {next[absRefs[i]]} 
+    -1 <= i && i < absTail ==> absRefs[i + 1] == next[absRefs[i]])
+  && (forall i: int :: {absArray[i], data[absRefs[i]]}
+    0 <= i && i < absTail ==> absArray[i] == data[absRefs[i]])
   && (forall y: Ref :: {Btwn(next, head, y, null), next[y]}
-    Btwn(next, head, y, null) && next[y] == null ==> y == absRefs[absTail])
+    Btwn(next, head, y, null) && next[y] == null ==> y == absRefs[absTail - 1])
 }
 
 
@@ -281,16 +283,18 @@ procedure {:layer 1} {:inline 1} intro_incrTail()
 procedure {:atomic} {:layer 2} atomic_pop() returns (k: Key)
   modifies absHead;
 {
-  k := absArray[absHead];
-  absHead := absHead + 1;
+  if (absHead != absTail) {
+    k := absArray[absHead];
+    absHead := absHead + 1;
+  }
 }
 
 procedure {:yields} {:layer 1} {:refines "atomic_pop"} pop() returns (k: Key)
   requires {:layer 1} Inv(queueFP, usedFP, start, head, tail, next, data, absArray, absRefs, absHead, absTail);
   ensures {:layer 1} Inv(queueFP, usedFP, start, head, tail, next, data, absArray, absRefs, absHead, absTail);
 {
-  var g: bool;
-  var h, t, x: Ref;
+  var b: bool;
+  var h, t, hn: Ref;
 
   yield;
   assert {:layer 1} Inv(queueFP, usedFP, start, head, tail, next, data, absArray, absRefs, absHead, absTail);
@@ -308,27 +312,28 @@ procedure {:yields} {:layer 1} {:refines "atomic_pop"} pop() returns (k: Key)
     assert {:layer 1} h == head || usedFP[h];
     assert {:layer 1} (h == head && h != t ==> head != tail);
 
+    call hn := readNext(h);
+    yield;
+    assert {:layer 1} Inv(queueFP, usedFP, start, head, tail, next, data, absArray, absRefs, absHead, absTail);
+    assert {:layer 1} h == head || usedFP[h];
+    assert {:layer 1} (h == t && hn == null) || queueFP[hn] || usedFP[hn];
+    assert {:layer 1} (h == head && h != t ==> head != tail && hn == next[head]);
+
     if (h != t) {
-      call x := readNext(h);
+      call k := readData(hn);
       yield;
       assert {:layer 1} Inv(queueFP, usedFP, start, head, tail, next, data, absArray, absRefs, absHead, absTail);
       assert {:layer 1} h == head || usedFP[h];
-      assert {:layer 1} (h == head && h != t ==> head != tail && x == next[head]);
+      assert {:layer 1} (h == head && h != t ==> head != tail && hn == next[head]);
+      assert {:layer 1} data[hn] == k;
 
-      call k := readData(h);
-      yield;
-      assert {:layer 1} Inv(queueFP, usedFP, start, head, tail, next, data, absArray, absRefs, absHead, absTail);
-      assert {:layer 1} h == head || usedFP[h];
-      assert {:layer 1} (h == head && h != t ==> head != tail && x == next[head]);
-      assert {:layer 1} data[h] == k;
-
-      call g := casHeadTransfer(h, x);
-      if (g) {
+      call b := casHeadTransfer(h, hn);
+      if (b) {
         // Linearization point. Update abstract state:
         call intro_incrHead();
         break;
       }
-    }  // TODO return EMPTY?
+    }
     yield;
     assert {:layer 1} Inv(queueFP, usedFP, start, head, tail, next, data, absArray, absRefs, absHead, absTail);
   }
@@ -340,9 +345,9 @@ procedure {:yields} {:layer 1} {:refines "atomic_pop"} pop() returns (k: Key)
 procedure {:atomic} {:layer 2} atomic_push(k: Key, x: Ref, {:linear_in "FP"} xFP: [Ref]bool)
   modifies absArray, absTail, absRefs;
 {
-  absTail := absTail + 1;
   absRefs[absTail] := x;
   absArray[absTail] := k;
+  absTail := absTail + 1;
 }
 
 procedure {:yields} {:layer 1} {:refines "atomic_push"} push(k: Key, x: Ref,
@@ -353,7 +358,7 @@ procedure {:yields} {:layer 1} {:refines "atomic_push"} push(k: Key, x: Ref,
   ensures {:layer 1} Inv(queueFP, usedFP, start, head, tail, next, data, absArray, absRefs, absHead, absTail);
 {
   var t, tn: Ref;
-  var g: bool;
+  var b: bool;
   var {:linear "FP"} tFP: [Ref]bool;
 
   yield;
@@ -384,15 +389,15 @@ procedure {:yields} {:layer 1} {:refines "atomic_push"} push(k: Key, x: Ref,
     assert {:layer 1} tn != null ==> tn == next[t];
 
     if (tn == null) {
-      call g, tFP := casNextTransfer(t, tn, x, tFP);
-      if (g) {
+      call b, tFP := casNextTransfer(t, tn, x, tFP);
+      if (b) {
         // Linearization point. Update abstract state:
-        call intro_incrTail();
         call intro_writeAbs(k, x);
+        call intro_incrTail();
         break;
       }
     } else {
-      call g := casTail(t, tn);
+      call b := casTail(t, tn);
     }
     yield;
     assert {:layer 1} Inv(queueFP, usedFP, start, head, tail, next, data, absArray, absRefs, absHead, absTail);
