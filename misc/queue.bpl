@@ -1,8 +1,8 @@
 // ----------------------------------------
 // A simple queue implementation based on the Michael-Scott queue.
 // Assumes GC, so does not free dequeued nodes.
-// Uses the simplified heap encoding from CIVL's Treiber example.
-// But uses FP sets for linearity instead of Heaps and dom(heap).
+// Uses Grasshopper style heap encoding and axioms (using known terms as triggers).
+// Also uses FP sets for linearity instead of Heaps and dom(heap).
 //
 // Use options -noinfer -typeEncoding:m -useArrayTheory
 // ----------------------------------------
@@ -125,9 +125,13 @@ function Queue.ofSeq(s: SeqInvoc) : Queue.State;
 
 // Effect of pop to the abstract state of a Queue
 axiom (forall s: SeqInvoc, n: Invoc :: {Queue.ofSeq(Seq_append(s, n))}
-  invoc_m(n) == Queue.pop // TODO empty?
-  ==> Queue.stateHead(Queue.ofSeq(Seq_append(s, n)))
-    == Queue.stateHead(Queue.ofSeq(s)) + 1
+  invoc_m(n) == Queue.pop
+  ==> ((Queue.stateHead(Queue.ofSeq(s)) != Queue.stateTail(Queue.ofSeq(s))
+      && Queue.stateHead(Queue.ofSeq(Seq_append(s, n)))
+      == Queue.stateHead(Queue.ofSeq(s)) + 1)
+    || (Queue.stateHead(Queue.ofSeq(s)) == Queue.stateTail(Queue.ofSeq(s))
+      && Queue.stateHead(Queue.ofSeq(Seq_append(s, n)))
+      == Queue.stateHead(Queue.ofSeq(s))))
   && Queue.stateTail(Queue.ofSeq(Seq_append(s, n)))
     == Queue.stateTail(Queue.ofSeq(s))
   && Queue.stateArray(Queue.ofSeq(Seq_append(s, n)))
@@ -142,7 +146,7 @@ axiom (forall s: SeqInvoc, n: Invoc :: {Queue.ofSeq(Seq_append(s, n))}
     == Queue.stateTail(Queue.ofSeq(s)) + 1
   && Queue.stateArray(Queue.ofSeq(Seq_append(s, n)))
     == Queue.stateArray(Queue.ofSeq(s))[
-      Queue.stateTail(Queue.ofSeq(Seq_append(s, n))) := invoc_k(n)]);
+      Queue.stateTail(Queue.ofSeq(s)) := invoc_k(n)]);
 
 // Effect of size to the abstract state of a Queue
 axiom (forall s: SeqInvoc, n: Invoc :: {Queue.ofSeq(Seq_append(s, n))}
@@ -193,23 +197,11 @@ function {:inline} {:linear "FP"} FPCollector(x: [Ref]bool) : [Ref]bool { x }
 
 // ---------- Reachability, between, and associated theories
 
-function Equal([Ref]bool, [Ref]bool) returns (bool);
-function Subset([Ref]bool, [Ref]bool) returns (bool);
-
-function Empty() returns ([Ref]bool);
-function Singleton(Ref) returns ([Ref]bool);
-function Union([Ref]bool, [Ref]bool) returns ([Ref]bool);
-
-axiom(forall x:Ref :: !Empty()[x]);
-
-axiom(forall x:Ref, y:Ref :: {Singleton(y)[x]} Singleton(y)[x] <==> x == y);
-axiom(forall y:Ref :: {Singleton(y)} Singleton(y)[y]);
-
-axiom(forall x:Ref, S:[Ref]bool, T:[Ref]bool :: {Union(S,T)[x]}{Union(S,T),S[x]}{Union(S,T),T[x]} Union(S,T)[x] <==> S[x] || T[x]);
-
-axiom(forall S:[Ref]bool, T:[Ref]bool :: {Equal(S,T)} Equal(S,T) <==> Subset(S,T) && Subset(T,S));
-axiom(forall x:Ref, S:[Ref]bool, T:[Ref]bool :: {S[x],Subset(S,T)}{T[x],Subset(S,T)} S[x] && Subset(S,T) ==> T[x]);
-axiom(forall S:[Ref]bool, T:[Ref]bool :: {Subset(S,T)} Subset(S,T) || (exists x:Ref :: S[x] && !T[x]));
+// Predicates used to control the triggers on the below axioms
+function known(x: Ref) : bool;
+function knownF(f: [Ref]Ref) : bool;
+axiom(forall x: Ref :: {known(x)} known(x));
+axiom(forall f: [Ref]Ref :: {knownF(f)} knownF(f));
 
 
 ////////////////////
@@ -237,50 +229,50 @@ axiom(forall f: [Ref]Ref, x: Ref, z: Ref :: {BtwnSet(f, x, z)} Btwn(f, z, z, z))
 // Axioms for Btwn
 //////////////////////////
 
+// read null
+// axiom (forall f: [Ref]Ref :: f[null] == null);  // TODO UNSOUND!!! FIX!
+
 // reflexive
 axiom(forall f: [Ref]Ref, x: Ref :: Btwn(f, x, x, x));
 
 // step
-axiom(forall f: [Ref]Ref, x: Ref, y: Ref, z: Ref, w:Ref :: {Btwn(f, y, z, w), f[x]} Btwn(f, x, f[x], f[x]));
+axiom(forall f: [Ref]Ref, x: Ref :: {f[x]} Btwn(f, x, f[x], f[x]));
 
 // reach
-axiom(forall f: [Ref]Ref, x: Ref, y: Ref :: {f[x], Btwn(f, x, y, y)} Btwn(f, x, y, y) ==> x == y || Btwn(f, x, f[x], y));
+axiom(forall f: [Ref]Ref, x: Ref, y: Ref :: {f[x], known(y)} Btwn(f, x, y, y) ==> x == y || Btwn(f, x, f[x], y));
 
 // cycle
-axiom(forall f: [Ref]Ref, x: Ref, y:Ref :: {f[x], Btwn(f, x, y, y)} f[x] == x && Btwn(f, x, y, y) ==> x == y);
+axiom(forall f: [Ref]Ref, x: Ref, y:Ref :: {f[x], known(y)} f[x] == x && Btwn(f, x, y, y) ==> x == y);
 
 // sandwich
-axiom(forall f: [Ref]Ref, x: Ref, y: Ref :: {Btwn(f, x, y, x)} Btwn(f, x, y, x) ==> x == y);
+axiom(forall f: [Ref]Ref, x: Ref, y: Ref :: {knownF(f), known(x), known(y), Btwn(f, x, y, x)} Btwn(f, x, y, x) ==> x == y);
 
 // order1
-axiom(forall f: [Ref]Ref, x: Ref, y: Ref, z: Ref :: {Btwn(f, x, y, y), Btwn(f, x, z, z)} Btwn(f, x, y, y) && Btwn(f, x, z, z) ==> Btwn(f, x, y, z) || Btwn(f, x, z, y));
+axiom(forall f: [Ref]Ref, x: Ref, y: Ref, z: Ref :: {knownF(f), known(x), known(y), known(z), Btwn(f, x, y, y), Btwn(f, x, z, z)} Btwn(f, x, y, y) && Btwn(f, x, z, z) ==> Btwn(f, x, y, z) || Btwn(f, x, z, y));
 
 // order2
-axiom(forall f: [Ref]Ref, x: Ref, y: Ref, z: Ref :: {Btwn(f, x, y, z)} Btwn(f, x, y, z) ==> Btwn(f, x, y, y) && Btwn(f, y, z, z));
+axiom(forall f: [Ref]Ref, x: Ref, y: Ref, z: Ref :: {knownF(f), known(x), known(y), known(z), Btwn(f, x, y, z)} Btwn(f, x, y, z) ==> Btwn(f, x, y, y) && Btwn(f, y, z, z));
 
 // transitive1
-axiom(forall f: [Ref]Ref, x: Ref, y: Ref, z: Ref :: {Btwn(f, x, y, y), Btwn(f, y, z, z)} Btwn(f, x, y, y) && Btwn(f, y, z, z) ==> Btwn(f, x, z, z));
+axiom(forall f: [Ref]Ref, x: Ref, y: Ref, z: Ref :: {knownF(f), known(x), known(y), known(z), Btwn(f, x, y, y), Btwn(f, y, z, z)} Btwn(f, x, y, y) && Btwn(f, y, z, z) ==> Btwn(f, x, z, z));
 
 // transitive2
-axiom(forall f: [Ref]Ref, x: Ref, y: Ref, z: Ref, w: Ref :: {Btwn(f, x, y, z), Btwn(f, y, w, z)} Btwn(f, x, y, z) && Btwn(f, y, w, z) ==> Btwn(f, x, y, w) && Btwn(f, x, w, z));
+axiom(forall f: [Ref]Ref, x: Ref, y: Ref, z: Ref, w: Ref :: {knownF(f), known(x), known(y), known(z), known(w), Btwn(f, x, y, z), Btwn(f, y, w, z)} Btwn(f, x, y, z) && Btwn(f, y, w, z) ==> Btwn(f, x, y, w) && Btwn(f, x, w, z));
 
 // transitive3
-axiom(forall f: [Ref]Ref, x: Ref, y: Ref, z: Ref, w: Ref :: {Btwn(f, x, y, z), Btwn(f, x, w, y)} Btwn(f, x, y, z) && Btwn(f, x, w, y) ==> Btwn(f, x, w, z) && Btwn(f, w, y, z));
-
-// This axiom is required to deal with the incompleteness of the trigger for the reflexive axiom.
-// It cannot be proved using the rest of the axioms.
-axiom(forall f: [Ref]Ref, u:Ref, x: Ref :: {Btwn(f, u, x, x)} Btwn(f, u, x, x) ==> Btwn(f, u, u, x));
+axiom(forall f: [Ref]Ref, x: Ref, y: Ref, z: Ref, w: Ref :: {knownF(f), known(x), known(y), known(z), known(w), Btwn(f, x, y, z), Btwn(f, x, w, y)} Btwn(f, x, y, z) && Btwn(f, x, w, y) ==> Btwn(f, x, w, z) && Btwn(f, w, y, z));
 
 // relation between ReachW and Btwn
-axiom(forall f: [Ref]Ref, x: Ref, y: Ref, z: Ref :: {ReachW(f, x, y, z)} ReachW(f, x, y, z) <==> (Btwn(f, x, y, z) || (Btwn(f, x, y, y) && !Btwn(f, x, z, z))));
-axiom(forall f: [Ref]Ref, x: Ref, y: Ref, z: Ref :: {Btwn(f, x, y, z)} Btwn(f, x, y, z) <==> (ReachW(f, x, y, z) && ReachW(f, x, z, z)));
+axiom(forall f: [Ref]Ref, x: Ref, y: Ref, z: Ref :: {knownF(f), known(x), known(y), known(z), ReachW(f, x, y, z)} ReachW(f, x, y, z) <==> (Btwn(f, x, y, z) || (Btwn(f, x, y, y) && !Btwn(f, x, z, z))));
+axiom(forall f: [Ref]Ref, x: Ref, y: Ref, z: Ref :: {knownF(f), known(x), known(y), known(z), Btwn(f, x, y, z)} Btwn(f, x, y, z) <==> (ReachW(f, x, y, z) && ReachW(f, x, z, z)));
 
-// update
-axiom(forall f: [Ref]Ref, u: Ref, v: Ref, x: Ref, p: Ref, q: Ref :: {ReachW(f[p := q], u, v, x)} ReachW(f[p := q], u, v, x) <==> ((ReachW(f, u, v, p) && ReachW(f, u, v, x)) || (ReachW(f, u, p, x) && p != x && ReachW(f, q, v, p) && ReachW(f, q, v, x))));
-
-axiom (forall f: [Ref]Ref, p: Ref, q: Ref, u: Ref, w: Ref :: {BtwnSet(f[p := q], u, w)} ReachW(f, u, w, p) ==> Equal(BtwnSet(f[p := q], u, w), BtwnSet(f, u, w)));
-axiom (forall f: [Ref]Ref, p: Ref, q: Ref, u: Ref, w: Ref :: {BtwnSet(f[p := q], u, w)} p != w && ReachW(f, u, p, w) && ReachW(f, q, w, p) ==> Equal(BtwnSet(f[p := q], u, w), Union(BtwnSet(f, u, p), BtwnSet(f, q, w))));
-axiom (forall f: [Ref]Ref, p: Ref, q: Ref, u: Ref, w: Ref :: {BtwnSet(f[p := q], u, w)} ReachW(f, u, w, p) || (p != w && ReachW(f, u, p, w) && ReachW(f, q, w, p)) || Equal(BtwnSet(f[p := q], u, w), Empty()));
+// btwn_write: grasshopper's update axiom
+axiom (forall f: [Ref]Ref, x: Ref, y: Ref, z: Ref, u: Ref, v: Ref :: {f[u := v], known(x), known(y), known(z), Btwn(f[u := v], x, y, z)}
+        u != null ==>
+          (Btwn(f[u := v], x, y, z) <==>
+          (Btwn(f, x, y, z) && ReachW(f, x, z, u))
+          || (u != z && ReachW(f, x, u, z) && ReachW(f, v, z, u)
+            && (Btwn(f, x, y, u) || Btwn(f, v, y, z)))));
 
 
 // ---------- Shared state and invariant
@@ -311,23 +303,28 @@ function {:inline} Inv(queueFP: [Ref]bool, usedFP: [Ref]bool, start: Ref,
   // There is a list from head to null
   Btwn(next, head, head, null)
   && (forall x: Ref :: {queueFP[x]}{Btwn(next, head, x, null)}
-    queueFP[x] <==> (Btwn(next, head, x, null) && x != null))
+    known(x) ==> (queueFP[x] <==> (Btwn(next, head, x, null) && x != null)))
   // Tail is on that list
   && Btwn(next, head, tail, null) && tail != null
   // There is also a list from start to head // TODO try just lseg(c, head)
   && Btwn(next, start, start, head)
   && (forall x: Ref :: {usedFP[x]}{Btwn(next, start, x, head)}
-    usedFP[x] <==> (Btwn(next, start, x, head) && x != head))
+    known(x) ==> (usedFP[x] <==> (Btwn(next, start, x, head) && x != head)))
+  // Terms needed for axiom triggers
+  && known(start) && known(head) && known(tail) && known(null) && knownF(next)
   // Relate abstract state to concrete state:
   && (forall i: int :: {absRefs[i]}
-    i < 0 || Queue.stateTail(Queue.ofSeq(lin)) < i <==> absRefs[i] == null)
-  && absRefs[Queue.stateHead(Queue.ofSeq(lin))] == head
-  && (forall i: int :: {next[absRefs[i]]} absRefs[i + 1] == next[absRefs[i]])
+    i < -1 || Queue.stateTail(Queue.ofSeq(lin)) <= i <==> absRefs[i] == null)
+  && absRefs[Queue.stateHead(Queue.ofSeq(lin)) - 1] == head
+  && (forall i: int :: {next[absRefs[i]]}
+    -1 <= i && i < Queue.stateTail(Queue.ofSeq(lin))
+    ==> absRefs[i + 1] == next[absRefs[i]])
   && (forall i: int :: {Queue.stateArray(Queue.ofSeq(lin))[i], data[absRefs[i]]}
-    Queue.stateArray(Queue.ofSeq(lin))[i] == data[absRefs[i]])
-  && (forall y: Ref :: {Btwn(next, head, y, null), next[y]}
-    Btwn(next, head, y, null) && next[y] == null
-    ==> y == absRefs[Queue.stateTail(Queue.ofSeq(lin))])
+    0 <= i && i < Queue.stateTail(Queue.ofSeq(lin))
+    ==> Queue.stateArray(Queue.ofSeq(lin))[i] == data[absRefs[i]])
+  && (forall y: Ref :: {Btwn(next, head, y, null), next[y]} known(y) ==>
+    (Btwn(next, head, y, null) && next[y] == null
+    ==> y == absRefs[Queue.stateTail(Queue.ofSeq(lin)) - 1]))
   // vis sets only contain linearized ops
   && (forall n1, n2: Invoc :: {Set_elem(n1, vis[n2])}
       Set_elem(n1, vis[n2]) && returned[n2] ==> Set_elem(n1, Set_ofSeq(lin)))
@@ -373,6 +370,7 @@ procedure {:atomic} {:layer 1} readNext_atomic(x: Ref) returns (y: Ref)
 {
   assert queueFP[x] || usedFP[x];
   y := next[x];
+  assume known(y);
 }
 
 procedure {:yields} {:layer 0} {:refines "readNext_atomic"} readNext(x: Ref) returns (y: Ref);
@@ -390,6 +388,7 @@ procedure {:atomic} {:layer 1} writeNext_atomic(x: Ref, y: Ref, {:linear "FP"} F
 {
   assert FP[x];
   next := next[x := y];
+  assume knownF(next);
 }
 
 procedure {:yields} {:layer 0} {:refines "writeNext_atomic"}
@@ -405,6 +404,7 @@ procedure {:atomic} {:layer 1} casNextTransfer_atomic(x: Ref, oldVal: Ref,
     next := next[x := newVal];
     outFP := emptySet;
     queueFP := queueFP[newVal := true];
+    assume knownF(next);
     b := true;
   } else {
     outFP := inFP;
@@ -441,9 +441,6 @@ procedure {:layer 1} {:inline 1} intro_writeAbsRefs(k: Key, x: Ref)
 {
   absRefs[Queue.stateTail(Queue.ofSeq(lin))] := x;
 }
-
-
-// ---------- Introduction actions:
 
 procedure {:layer 1} intro_readLin() returns (s: SetInvoc)
   ensures {:layer 1} s == Set_ofSeq(lin);
@@ -514,7 +511,7 @@ procedure {:yields} {:layer 1} {:refines "pop_atomic"} pop() returns (k: Key)
 {
   var {:linear "this"} this: Invoc;
   var {:layer 1} my_vis: SetInvoc;
-  var g: bool;
+  var b: bool;
   var h, t, hn: Ref;
 
   yield;
@@ -540,22 +537,23 @@ procedure {:yields} {:layer 1} {:refines "pop_atomic"} pop() returns (k: Key)
     assert {:layer 1} h == head || usedFP[h];
     assert {:layer 1} (h == head && h != t ==> head != tail);
 
+    call hn := readNext(h);
+    yield;
+    assert {:layer 1} Inv(queueFP, usedFP, start, head, tail, next, data, lin, vis, absRefs, called, returned) && inProgress(called, returned, this);
+    assert {:layer 1} h == head || usedFP[h];
+    assert {:layer 1} (h == t && hn == null) || queueFP[hn] || usedFP[hn];
+    assert {:layer 1} (h == head && h != t ==> head != tail && hn == next[head]);
+
     if (h != t) {
-      call hn := readNext(h);
+      call k := readData(hn);
       yield;
       assert {:layer 1} Inv(queueFP, usedFP, start, head, tail, next, data, lin, vis, absRefs, called, returned) && inProgress(called, returned, this);
       assert {:layer 1} h == head || usedFP[h];
       assert {:layer 1} (h == head && h != t ==> head != tail && hn == next[head]);
+      assert {:layer 1} data[hn] == k;
 
-      call k := readData(h);
-      yield;
-      assert {:layer 1} Inv(queueFP, usedFP, start, head, tail, next, data, lin, vis, absRefs, called, returned) && inProgress(called, returned, this);
-      assert {:layer 1} h == head || usedFP[h];
-      assert {:layer 1} (h == head && h != t ==> head != tail && hn == next[head]);
-      assert {:layer 1} data[h] == k;
-
-      call g := casHeadTransfer(h, hn);
-      if (g) {
+      call b := casHeadTransfer(h, hn);
+      if (b) {
         // Linearization point.
         call intro_writeLin(this);
         call my_vis := intro_readLin();
@@ -563,7 +561,7 @@ procedure {:yields} {:layer 1} {:refines "pop_atomic"} pop() returns (k: Key)
 
         break;
       }
-    }  // TODO return EMPTY?
+    }
     yield;
     assert {:layer 1} Inv(queueFP, usedFP, start, head, tail, next, data, lin, vis, absRefs, called, returned) && inProgress(called, returned, this);
   }
@@ -602,7 +600,7 @@ procedure {:yields} {:layer 1} {:refines "push_atomic"} push(k: Key, x: Ref,
   var {:linear "this"} this: Invoc;
   var {:layer 1} my_vis: SetInvoc;
   var t, tn: Ref;
-  var g: bool;
+  var b: bool;
   var {:linear "FP"} tFP: [Ref]bool;
 
   yield;
@@ -618,7 +616,7 @@ procedure {:yields} {:layer 1} {:refines "push_atomic"} push(k: Key, x: Ref,
   tFP := xFP;
   while (true)
     invariant {:layer 1} Inv(queueFP, usedFP, start, head, tail, next, data, lin, vis, absRefs, called, returned) && inProgress(called, returned, this);
-    invariant {:layer 1} !Btwn(next, head, x, null);
+    invariant {:layer 1} known(x) && !Btwn(next, head, x, null);
     invariant {:layer 1} tFP == xFP && xFP[x] && next[x] == null && data[x] == k;
   {
     call t := readTail();
@@ -639,18 +637,18 @@ procedure {:yields} {:layer 1} {:refines "push_atomic"} push(k: Key, x: Ref,
     assert {:layer 1} tn != null ==> tn == next[t];
 
     if (tn == null) {
-      call g, tFP := casNextTransfer(t, tn, x, tFP);
-      if (g) {
+      call b, tFP := casNextTransfer(t, tn, x, tFP);
+      if (b) {
         // Linearization point.
+        call intro_writeAbsRefs(k, x);
         call intro_writeLin(this);
         call my_vis := intro_readLin();
         call intro_write_vis(this, my_vis);
-        call intro_writeAbsRefs(k, x);
 
         break;
       }
     } else {
-      call g := casTail(t, tn);
+      call b := casTail(t, tn);
     }
     yield;
     assert {:layer 1} Inv(queueFP, usedFP, start, head, tail, next, data, lin, vis, absRefs, called, returned) && inProgress(called, returned, this);
@@ -720,7 +718,7 @@ procedure {:yields} {:layer 1} {:refines "size_atomic"} size() returns (s: int)
       hb(j, this) ==> Set_subset(vis[j], my_vis));
     invariant {:layer 1} (forall n1: Invoc :: {Set_elem(n1, my_vis)}
         Set_elem(n1, my_vis) ==> Set_elem(n1, Set_ofSeq(lin)));
-    invariant {:layer 1} (usedFP[c] || queueFP[c] || c == null);
+    invariant {:layer 1} known(c) && (usedFP[c] || queueFP[c] || c == null);
   {
     s := s + 1;
     call c := readNext(c);
