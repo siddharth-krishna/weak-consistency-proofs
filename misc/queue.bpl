@@ -54,6 +54,12 @@ function Set_elem(n: Invoc, s: SetInvoc) : bool;
 
 function Set_subset(s: SetInvoc, t: SetInvoc) : bool;
 
+function Set_equal(s, t: SetInvoc) : bool;  // helper function to prove sets are equal
+
+// extensionality
+axiom (forall s, t: SetInvoc :: {Set_equal(s, t)}
+  (forall n: Invoc :: Set_elem(n, s) <==> Set_elem(n, t)) ==> Set_equal(s, t) && s == t);
+
 // Set_empty is a subset of anything
 axiom (forall s: SetInvoc :: Set_subset(Set_empty, s));
 
@@ -88,6 +94,10 @@ axiom (forall s, t: SetInvoc :: {Set_union(s, t), Set_union(t, s)}
 axiom (forall s1, s2, s3: SetInvoc :: {Set_subset(s1, s2), Set_subset(s1, Set_union(s2, s3))}
   Set_subset(s1, s2) ==> Set_subset(s1, Set_union(s2, s3)));
 
+// union with empty
+axiom (forall s: SetInvoc :: Set_union(s, Set_empty) == s);
+axiom (forall s: SetInvoc :: Set_union(Set_empty, s) == s);
+
 // union is monotonic w.r.t subset
 // axiom (forall s, t1, t2: SetInvoc ::
 //   Set_subset(t1, t2) ==> Set_subset(Set_union(s, t1), Set_union(s, t2)));
@@ -110,9 +120,16 @@ axiom (forall n: Invoc, s, t: SetInvoc ::
     {Set_elem(n, Set_inter(s, t)), Set_elem(n, s)}
   Set_elem(n, Set_inter(s, t)) <==> Set_elem(n, s) && Set_elem(n, t));
 
+// intersection with empty
+axiom (forall s: SetInvoc :: Set_inter(s, Set_empty) == Set_empty);
+axiom (forall s: SetInvoc :: Set_inter(Set_empty, s) == Set_empty);
+
 function Set_ofSeq(q: SeqInvoc) returns (s: SetInvoc);
 
 function Set_add(s: SetInvoc, n: Invoc) returns (t: SetInvoc);
+
+// add in terms of union and singleton
+axiom (forall s: SetInvoc, n: Invoc :: {Set_union(s, Set(n))} Set_add(s, n) == Set_union(s, Set(n)));
 
 // Relation between add and elem
 axiom (forall s: SetInvoc, n1, n2: Invoc :: {Set_elem(n1, Set_add(s, n2))}
@@ -306,9 +323,6 @@ axiom(forall f: [Ref]Ref, x: Ref, z: Ref :: {BtwnSet(f, x, z)} Btwn(f, z, z, z))
 //////////////////////////
 // Axioms for Btwn
 //////////////////////////
-
-// read null
-// axiom (forall f: [Ref]Ref :: f[null] == null);  // TODO UNSOUND!!! FIX!
 
 // reflexive
 axiom(forall f: [Ref]Ref, x: Ref :: Btwn(f, x, x, x));
@@ -583,7 +597,7 @@ procedure {:layer 1} {:inline 1} intro_writeAbsRefs(k: Key, x: Ref)
   absRefs[Queue.stateTail(Queue.ofSeq(lin))] := x;
 }
 
-procedure {:layer 1} {:inline 1} intro_ci() returns (ci: int)  // TODO rename
+procedure {:layer 1} {:inline 1} intro_getHeadIndex() returns (ci: int)
 {
   ci := Queue.stateHead(Queue.ofSeq(lin));
 }
@@ -607,18 +621,16 @@ procedure {:layer 1} {:inline 1} intro_writeNextInvoc(x: Ref, n: Invoc)
 }
 
 procedure {:layer 1} intro_readNextTags(x: Ref, v: SetInvoc) returns (v1: SetInvoc)
-  ensures {:layer 1} v1 == Set_union(v, Set_inter(nextTags[x], Set_ofSeq(lin)));
-  // Just to seed some triggers:
-  ensures {:layer 1} (forall n: Invoc :: {Set_elem(n, v1)} Set_elem(n, v1)
-    <==> Set_elem(n, v) || (Set_elem(n, nextTags[x]) && Set_elem(n, Set_ofSeq(lin))));
-  // TODO prove this set property:
-  ensures {:layer 1}
-    (known(x) && Btwn(next, start, x, null) && x != null && next[x] != null
-      && Seq_elem(nextInvoc[x], lin) && v1 == Set_add(v, nextInvoc[x]))
-    || (!Seq_elem(nextInvoc[x], lin) && v1 == v);
+  requires {:layer 1} Inv(queueFP, usedFP, start, head, tail, next, data, nextTags, nextInvoc, nextRef, lin, vis, absRefs, called, returned);
+  requires {:layer 1} known(x) && Btwn(next, start, x, null) && x != null;
+  ensures {:layer 1} next[x] == null ==> v1 == v;
+  ensures {:layer 1} next[x] != null ==> Seq_elem(nextInvoc[x], lin) && v1 == Set_add(v, nextInvoc[x]);
 {
   v1 := Set_union(v, Set_inter(nextTags[x], Set_ofSeq(lin)));
-  assume {:layer 1} false;
+  // Trigger some axioms:
+  assert {:layer 1} (forall n: Invoc :: {Set_elem(n, v1)} Set_elem(n, v1)
+    <==> Set_elem(n, v) || (Set_elem(n, nextTags[x]) && Set_elem(n, Set_ofSeq(lin))));
+  assert {:layer 1} next[x] != null ==> Set_equal(v1, Set_add(v, nextInvoc[x]));
 }
 
 procedure {:layer 1} intro_readLin() returns (s: SetInvoc)
@@ -884,7 +896,7 @@ procedure {:yields} {:layer 1} {:refines "size_atomic"} size() returns (s: int)
 
   s := 0;
   call c := readHead();
-  call ci := intro_ci();
+  call ci := intro_getHeadIndex();
   call t0 := intro_getTail();
   call t0i := intro_getTailIndex();
   call my_vis := intro_readLin();
