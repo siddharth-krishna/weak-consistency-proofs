@@ -168,6 +168,10 @@ axiom (forall q: SeqInvoc, s: SetInvoc, n: Invoc :: {Seq_elem(n, Seq_restr(q, s)
 // Implicit (strict) order of a sequence
 function Seq_ord(q: SeqInvoc, n1, n2: Invoc) : bool;
 
+// This order is transitive
+// axiom (forall q: SeqInvoc, n1, n2, n3: Invoc :: //{}
+//   Seq_ord(q, n1, n2) && Seq_ord(q, n2, n3) ==> Seq_ord(q, n1, n3));
+
 // Adding to the restriction set is append if ordered correctly
 axiom (forall q: SeqInvoc, s: SetInvoc, n: Invoc :: {Seq_restr(q, Set_add(s, n))}
   (forall n1: Invoc :: Seq_elem(n1, Seq_restr(q, s)) ==> Seq_ord(q, n1, n))
@@ -405,6 +409,8 @@ function {:inline} Inv(queueFP: [Ref]bool, usedFP: [Ref]bool, start: Ref,
   && (forall i: int :: {next[absRefs[i]]}
     -1 <= i && i < Queue.stateTail(Queue.ofSeq(lin))
     ==> absRefs[i + 1] == next[absRefs[i]])
+  && (forall i, j: int :: {absRefs[i], absRefs[j]}
+    absRefs[i] == absRefs[j] && absRefs[i] != null ==> i == j)
   && (forall i: int :: {Queue.stateArray(Queue.ofSeq(lin))[i], data[absRefs[i]]}
     0 <= i && i < Queue.stateTail(Queue.ofSeq(lin))
     ==> Queue.stateArray(Queue.ofSeq(lin))[i] == data[absRefs[i]])
@@ -847,9 +853,9 @@ procedure {:atomic} {:layer 2} size_atomic() returns (s: int)
   var {:linear "this"} this: Invoc; var my_vis: SetInvoc;
   assume Queue.size == invoc_m(this);
 
-  // // Satisfies its functional spec  // TODO
-  // assume s == Queue.stateTail(Queue.ofSeq(Seq_restr(lin, my_vis)))
-  //   - Queue.stateHead(Queue.ofSeq(Seq_restr(lin, my_vis)));
+  // Satisfies its functional spec
+  assume s == Queue.stateTail(Queue.ofSeq(Seq_restr(lin, my_vis)))
+    - Queue.stateHead(Queue.ofSeq(Seq_restr(lin, my_vis)));
 
   lin := Seq_append(lin, this);
   vis[this] := my_vis;
@@ -893,6 +899,7 @@ procedure {:yields} {:layer 1} {:refines "size_atomic"} size() returns (s: int)
   assert {:layer 1} t0i == Queue.stateTail(Queue.ofSeq(Seq_restr(lin, my_vis)));
   assert {:layer 1} known(t0) && t0 != null && Btwn(next, start, t0, null);
   assert {:layer 1} known(c) && Btwn(next, start, c, t0);
+  assert {:layer 1} c == absRefs[ci - 1] && t0 == absRefs[t0i - 1];
   assert {:layer 1} (forall n: Invoc :: {Set_elem(n, my_vis)}
     known(nextRef[n]) && invoc_m(n) == Queue.push ==>
     (Set_elem(n, my_vis) <==> Btwn(next, start, nextRef[n], t0) && nextRef[n] != t0));
@@ -913,6 +920,7 @@ procedure {:yields} {:layer 1} {:refines "size_atomic"} size() returns (s: int)
   assert {:layer 1} Btwn(next, start, c, t0) && c != t0
     ==> old_vis == my_vis
     && t0i == Queue.stateTail(Queue.ofSeq(Seq_restr(lin, my_vis)))
+    && ((cn == null && c == absRefs[ci - 1]) || (cn != null && c == absRefs[ci - 2]))
     && s == ci - 1 - Queue.stateHead(Queue.ofSeq(Seq_restr(lin, my_vis)));
   // Case 2  -- restr(lin, my_vis) == append(restr(lin, old_vis), nextInvoc[c])
   assert {:layer 1} Btwn(next, t0, c, null) && next[c] != null
@@ -926,6 +934,8 @@ procedure {:yields} {:layer 1} {:refines "size_atomic"} size() returns (s: int)
   assert {:layer 1} (forall n1: Invoc :: {Set_elem(n1, my_vis)}
     Set_elem(n1, my_vis) ==> Set_elem(n1, Set_ofSeq(lin)));
   assert {:layer 1} (usedFP[c] || queueFP[c]) && known(c) && (cn != null ==> cn == next[c]);
+  assert {:layer 1} cn == null ==> Btwn(next, t0, c, null);
+  assert {:layer 1} ((cn == null && c == absRefs[ci - 1]) || (cn != null && c == absRefs[ci - 2])) && t0 == absRefs[t0i - 1];
   assert {:layer 1} known(t0) && t0 != null && Btwn(next, start, t0, null);
   assert {:layer 1} (Btwn(next, start, c, t0) && c != t0
       && t0i == Queue.stateTail(Queue.ofSeq(Seq_restr(lin, my_vis)))
@@ -952,23 +962,26 @@ procedure {:yields} {:layer 1} {:refines "size_atomic"} size() returns (s: int)
       Set_elem(n1, my_vis) ==> Set_elem(n1, Set_ofSeq(lin)));
     invariant {:layer 1} known(c) && (usedFP[c] || queueFP[c] || c == null);
     invariant {:layer 1} known(cn) && (cn != null ==> next[c] == cn);
+    invariant {:layer 1} cn == null ==> Btwn(next, t0, c, null);
     invariant {:layer 1} known(t0) && t0 != null && Btwn(next, start, t0, null);
-    // invariant {:layer 1} (Btwn(next, start, c, t0) && c != t0
-    //     && t0i == Queue.stateTail(Queue.ofSeq(Seq_restr(lin, my_vis)))
-    //     && (forall n: Invoc :: {Set_elem(n, my_vis)}
-    //       known(nextRef[n]) && invoc_m(n) == Queue.push ==>
-    //       (Set_elem(n, my_vis) <==> Btwn(next, start, nextRef[n], t0) && nextRef[n] != t0))
-    //     && s == ci - 1 - Queue.stateHead(Queue.ofSeq(Seq_restr(lin, my_vis))))
-    //   || (Btwn(next, t0, c, null)
-    //     && ci == Queue.stateTail(Queue.ofSeq(Seq_restr(lin, my_vis)))
-    //     && (forall n: Invoc :: {Set_elem(n, my_vis)}
-    //       known(nextRef[n]) && invoc_m(n) == Queue.push ==>
-    //       (Set_elem(n, my_vis) <==> Btwn(next, start, nextRef[n], c)))
-    //     && ((cn == null && s == ci - Queue.stateHead(Queue.ofSeq(Seq_restr(lin, my_vis))))
-    //       || (cn != null && s == ci - 1 - Queue.stateHead(Queue.ofSeq(Seq_restr(lin, my_vis))))));
-    // invariant {:layer 1} (forall n1, n2: Invoc :: {Seq_ord(lin, n1, n2)} known(nextRef[n2]) ==>
-    //   (Seq_elem(n1, Seq_restr(lin, my_vis)) && Seq_elem(n2, lin) && !Set_elem(n2, my_vis)
-    //   && invoc_m(n2) == Queue.push ==> Seq_ord(lin, n1, n2)));
+    invariant {:layer 1} ((cn == null && c == absRefs[ci - 1]) || (cn != null && c == absRefs[ci - 2])) && t0 == absRefs[t0i - 1];
+    invariant {:layer 1} (Btwn(next, start, c, t0) && c != t0
+        && t0i == Queue.stateTail(Queue.ofSeq(Seq_restr(lin, my_vis)))
+        && (forall n: Invoc :: {Set_elem(n, my_vis)}
+          known(nextRef[n]) && invoc_m(n) == Queue.push ==>
+          (Set_elem(n, my_vis) <==> Btwn(next, start, nextRef[n], t0) && nextRef[n] != t0))
+        && s == ci - 1 - Queue.stateHead(Queue.ofSeq(Seq_restr(lin, my_vis))))
+      || (Btwn(next, t0, c, null)
+        && ci == Queue.stateTail(Queue.ofSeq(Seq_restr(lin, my_vis)))
+        && (forall n: Invoc :: {Set_elem(n, my_vis)}
+          known(nextRef[n]) && invoc_m(n) == Queue.push ==>
+          (Set_elem(n, my_vis) <==> Btwn(next, start, nextRef[n], c)
+            && (cn != null || nextRef[n] != c)))
+        && ((cn == null && s == ci - Queue.stateHead(Queue.ofSeq(Seq_restr(lin, my_vis))))
+          || (cn != null && s == ci - 1 - Queue.stateHead(Queue.ofSeq(Seq_restr(lin, my_vis))))));
+    invariant {:layer 1} (forall n1, n2: Invoc :: {Seq_ord(lin, n1, n2)} known(nextRef[n2]) ==>
+      (Seq_elem(n1, Seq_restr(lin, my_vis)) && Seq_elem(n2, lin) && !Set_elem(n2, my_vis)
+      && invoc_m(n2) == Queue.push ==> Seq_ord(lin, n1, n2)));
   {
     old_vis := my_vis; old_c := c;
 
@@ -980,18 +993,26 @@ procedure {:yields} {:layer 1} {:refines "size_atomic"} size() returns (s: int)
       ci := ci + 1;
     }
 
-    // // Case 1
-    // assert {:layer 1} Btwn(next, start, c, t0) && c != t0
-    //   ==> Set_elem(nextInvoc[c], old_vis);
-    // assert {:layer 1} Btwn(next, start, c, t0) && c != t0
-    //   ==> old_vis == my_vis
-    //   && t0i == Queue.stateTail(Queue.ofSeq(Seq_restr(lin, my_vis)))
-    //   && s == ci - 1 - Queue.stateHead(Queue.ofSeq(Seq_restr(lin, my_vis)));
-    // // Case 2  -- restr(lin, my_vis) == append(restr(lin, old_vis), nextInvoc[c])
-    // assert {:layer 1} Btwn(next, t0, c, null) && next[c] != null
-    //   ==> Seq_restr(lin, my_vis) == Seq_append(Seq_restr(lin, old_vis), nextInvoc[c])
-    //     && ci == Queue.stateTail(Queue.ofSeq(Seq_restr(lin, my_vis)))
-    //     && s == ci - 1 - Queue.stateHead(Queue.ofSeq(Seq_restr(lin, my_vis)));
+    // Case 1
+    assert {:layer 1} Btwn(next, start, c, t0) && c != t0
+      ==> Set_elem(nextInvoc[c], old_vis);
+    assert {:layer 1} Btwn(next, start, c, t0) && c != t0
+      ==> old_vis == my_vis
+      && t0i == Queue.stateTail(Queue.ofSeq(Seq_restr(lin, my_vis)))
+      && s == ci - 1 - Queue.stateHead(Queue.ofSeq(Seq_restr(lin, my_vis)));
+    // Case 2  -- restr(lin, my_vis) == append(restr(lin, old_vis), nextInvoc[c])
+    assert {:layer 1} Btwn(next, t0, c, null) && next[c] != null
+      ==> Seq_restr(lin, my_vis) == Seq_append(Seq_restr(lin, old_vis), nextInvoc[c]);
+    assert {:layer 1} Btwn(next, t0, c, null) && next[c] != null
+      && Btwn(next, start, old_c, t0) && old_c != t0
+      ==> c == t0 && next[old_c] == t0;
+    assert {:layer 1} Btwn(next, t0, c, null) && next[c] != null
+      && Btwn(next, start, old_c, t0) && old_c != t0
+      ==> ci == Queue.stateTail(Queue.ofSeq(Seq_restr(lin, my_vis)));
+    assert {:layer 1} Btwn(next, t0, c, null) && next[c] != null
+      ==> ci == Queue.stateTail(Queue.ofSeq(Seq_restr(lin, my_vis)));
+    assert {:layer 1} Btwn(next, t0, c, null) && next[c] != null
+      ==> s == ci - 1 - Queue.stateHead(Queue.ofSeq(Seq_restr(lin, my_vis)));
 
     yield;
     assert {:layer 1} Inv(queueFP, usedFP, start, head, tail, next, data, nextTags, nextInvoc, nextRef, lin, vis, absRefs, called, returned) && preLP(called, returned, lin, this);
@@ -1001,23 +1022,26 @@ procedure {:yields} {:layer 1} {:refines "size_atomic"} size() returns (s: int)
       Set_elem(n1, my_vis) ==> Set_elem(n1, Set_ofSeq(lin)));
     assert {:layer 1} known(c) && (usedFP[c] || queueFP[c] || c == null);
     assert {:layer 1} known(cn) && (cn != null ==> next[c] == cn);
+    assert {:layer 1} cn == null ==> Btwn(next, t0, c, null);
     assert {:layer 1} known(t0) && t0 != null && Btwn(next, start, t0, null);
-    // assert {:layer 1} (Btwn(next, start, c, t0) && c != t0
-    //     && t0i == Queue.stateTail(Queue.ofSeq(Seq_restr(lin, my_vis)))
-    //     && (forall n: Invoc :: {Set_elem(n, my_vis)}
-    //       known(nextRef[n]) && invoc_m(n) == Queue.push ==>
-    //       (Set_elem(n, my_vis) <==> Btwn(next, start, nextRef[n], t0) && nextRef[n] != t0))
-    //     && s == ci - 1 - Queue.stateHead(Queue.ofSeq(Seq_restr(lin, my_vis))))
-    //   || (Btwn(next, t0, c, null)
-    //     && ci == Queue.stateTail(Queue.ofSeq(Seq_restr(lin, my_vis)))
-    //     && (forall n: Invoc :: {Set_elem(n, my_vis)}
-    //       known(nextRef[n]) && invoc_m(n) == Queue.push ==>
-    //       (Set_elem(n, my_vis) <==> Btwn(next, start, nextRef[n], c)))
-    //     && ((cn == null && s == ci - Queue.stateHead(Queue.ofSeq(Seq_restr(lin, my_vis))))
-    //       || (cn != null && s == ci - 1 - Queue.stateHead(Queue.ofSeq(Seq_restr(lin, my_vis))))));
-    // assert {:layer 1} (forall n1, n2: Invoc :: {Seq_ord(lin, n1, n2)} known(nextRef[n2]) ==>
-    //   (Seq_elem(n1, Seq_restr(lin, my_vis)) && Seq_elem(n2, lin) && !Set_elem(n2, my_vis)
-    //   && invoc_m(n2) == Queue.push ==> Seq_ord(lin, n1, n2)));
+    assert {:layer 1} ((cn == null && c == absRefs[ci - 1]) || (cn != null && c == absRefs[ci - 2])) && t0 == absRefs[t0i - 1];
+    assert {:layer 1} (Btwn(next, start, c, t0) && c != t0
+        && t0i == Queue.stateTail(Queue.ofSeq(Seq_restr(lin, my_vis)))
+        && (forall n: Invoc :: {Set_elem(n, my_vis)}
+          known(nextRef[n]) && invoc_m(n) == Queue.push ==>
+          (Set_elem(n, my_vis) <==> Btwn(next, start, nextRef[n], t0) && nextRef[n] != t0))
+        && s == ci - 1 - Queue.stateHead(Queue.ofSeq(Seq_restr(lin, my_vis))))
+      || (Btwn(next, t0, c, null)
+        && ci == Queue.stateTail(Queue.ofSeq(Seq_restr(lin, my_vis)))
+        && (forall n: Invoc :: {Set_elem(n, my_vis)}
+          known(nextRef[n]) && invoc_m(n) == Queue.push ==>
+          (Set_elem(n, my_vis) <==> Btwn(next, start, nextRef[n], c)
+            && (cn != null || nextRef[n] != c)))
+        && ((cn == null && s == ci - Queue.stateHead(Queue.ofSeq(Seq_restr(lin, my_vis))))
+          || (cn != null && s == ci - 1 - Queue.stateHead(Queue.ofSeq(Seq_restr(lin, my_vis))))));
+    assert {:layer 1} (forall n1, n2: Invoc :: {Seq_ord(lin, n1, n2)} known(nextRef[n2]) ==>
+      (Seq_elem(n1, Seq_restr(lin, my_vis)) && Seq_elem(n2, lin) && !Set_elem(n2, my_vis)
+      && invoc_m(n2) == Queue.push ==> Seq_ord(lin, n1, n2)));
   }
 
   // Linearization point.
