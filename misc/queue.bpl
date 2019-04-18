@@ -960,7 +960,7 @@ procedure {:yields} {:layer 1} {:refines "size_atomic"} size() returns (s: int)
       hb(j, this) ==> Set_subset(vis[j], my_vis));
     invariant {:layer 1} (forall n1: Invoc :: {Set_elem(n1, my_vis)}
       Set_elem(n1, my_vis) ==> Set_elem(n1, Set_ofSeq(lin)));
-    invariant {:layer 1} known(c) && (usedFP[c] || queueFP[c] || c == null);
+    invariant {:layer 1} known(c) && (usedFP[c] || queueFP[c]);
     invariant {:layer 1} known(cn) && (cn != null ==> next[c] == cn);
     invariant {:layer 1} cn == null ==> Btwn(next, t0, c, null);
     invariant {:layer 1} known(t0) && t0 != null && Btwn(next, start, t0, null);
@@ -1020,7 +1020,7 @@ procedure {:yields} {:layer 1} {:refines "size_atomic"} size() returns (s: int)
       hb(j, this) ==> Set_subset(vis[j], my_vis));
     assert {:layer 1} (forall n1: Invoc :: {Set_elem(n1, my_vis)}
       Set_elem(n1, my_vis) ==> Set_elem(n1, Set_ofSeq(lin)));
-    assert {:layer 1} known(c) && (usedFP[c] || queueFP[c] || c == null);
+    assert {:layer 1} known(c) && (usedFP[c] || queueFP[c]);
     assert {:layer 1} known(cn) && (cn != null ==> next[c] == cn);
     assert {:layer 1} cn == null ==> Btwn(next, t0, c, null);
     assert {:layer 1} known(t0) && t0 != null && Btwn(next, start, t0, null);
