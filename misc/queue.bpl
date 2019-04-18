@@ -421,12 +421,13 @@ function {:inline} Inv(queueFP: [Ref]bool, usedFP: [Ref]bool, start: Ref,
     (Seq_elem(n, lin) 
       <==> Btwn(next, start, nextRef[n], null)
         && nextRef[n] != null && next[nextRef[n]] != null))
-  // // lin is ordered by order of nodes in queue
+  // lin is ordered by order of nodes in queue
   && (forall n1, n2: Invoc :: {Seq_ord(lin, n1, n2)}
-    invoc_m(n1) == Queue.push && invoc_m(n2) == Queue.push
+    known(nextRef[n1]) && known(nextRef[n2]) ==>
+    (invoc_m(n1) == Queue.push && invoc_m(n2) == Queue.push
     && Seq_elem(n1, lin) && Seq_elem(n2, lin)
     ==> (Seq_ord(lin, n1, n2)
-      <==> Btwn(next, nextRef[n1], nextRef[n1], nextRef[n2]) && nextRef[n1] != nextRef[n2]))
+      <==> Btwn(next, nextRef[n1], nextRef[n1], nextRef[n2]) && nextRef[n1] != nextRef[n2])))
   // Default value for nextRef is null
   && (forall n: Invoc :: {nextRef[n]}
     !Seq_elem(n, lin) || invoc_m(n) != Queue.push ==> nextRef[n] == null)
@@ -924,7 +925,7 @@ procedure {:yields} {:layer 1} {:refines "size_atomic"} size() returns (s: int)
   assert {:layer 1} (forall j: Invoc :: hb(j, this) ==> Set_subset(vis[j], my_vis));
   assert {:layer 1} (forall n1: Invoc :: {Set_elem(n1, my_vis)}
     Set_elem(n1, my_vis) ==> Set_elem(n1, Set_ofSeq(lin)));
-  assert {:layer 1} (usedFP[c] || queueFP[c]) && (cn != null ==> cn == next[c]);
+  assert {:layer 1} (usedFP[c] || queueFP[c]) && known(c) && (cn != null ==> cn == next[c]);
   assert {:layer 1} known(t0) && t0 != null && Btwn(next, start, t0, null);
   assert {:layer 1} (Btwn(next, start, c, t0) && c != t0
       && t0i == Queue.stateTail(Queue.ofSeq(Seq_restr(lin, my_vis)))
@@ -936,7 +937,7 @@ procedure {:yields} {:layer 1} {:refines "size_atomic"} size() returns (s: int)
       && ci == Queue.stateTail(Queue.ofSeq(Seq_restr(lin, my_vis)))
       && (forall n: Invoc :: {Set_elem(n, my_vis)}
         known(nextRef[n]) && invoc_m(n) == Queue.push ==>
-        (Set_elem(n, my_vis) <==> Btwn(next, start, nextRef[n], c)))
+        (Set_elem(n, my_vis) <==> Btwn(next, start, nextRef[n], c) && (cn != null || nextRef[n] != c)))
       && ((cn == null && s == ci - Queue.stateHead(Queue.ofSeq(Seq_restr(lin, my_vis))))
         || (cn != null && s == ci - 1 - Queue.stateHead(Queue.ofSeq(Seq_restr(lin, my_vis))))));
   assert {:layer 1} (forall n1, n2: Invoc :: {Seq_ord(lin, n1, n2)} known(nextRef[n2]) ==>
