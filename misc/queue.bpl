@@ -8,20 +8,6 @@
 // ----------------------------------------
 
 
-// ---------- Types of methods and invocations
-
-type Method;
-
-type Invoc;
-
-// Boilerplate stuff for linear variables
-function {:builtin "MapConst"} MapConstInvocBool(bool) : [Invoc]bool;
-function {:inline} {:linear "this"} TidCollector(x: Invoc) : [Invoc]bool
-{
-  MapConstInvocBool(false)[x := true]
-}
-
-
 // ---------- Types and axiomatization of sequences (of invocations)
 
 // Sequences of invocations
@@ -203,77 +189,6 @@ axiom (forall q: SeqInvoc, n, n1, n2: Invoc :: {Seq_ord(Seq_append(q, n), n1, n2
       || (Seq_elem(n1, q) && n2 == n)));
 
 
-// ---------- Axioms of the queue ADT
-
-const unique Queue.push, Queue.pop, Queue.size: Method;
-
-function invoc_m(n: Invoc) : Method;
-function invoc_k(n: Invoc) : Key;
-
-type Queue.State;
-
-function Queue.stateArray(s: Queue.State) : [int]Key;
-function Queue.stateHead(s: Queue.State) : int;
-function Queue.stateTail(s: Queue.State) : int;
-
-function Queue.ofSeq(s: SeqInvoc) : Queue.State;
-
-// Effect of pop to the abstract state of a Queue
-axiom (forall s: SeqInvoc, n: Invoc :: {Queue.ofSeq(Seq_append(s, n))}
-  invoc_m(n) == Queue.pop
-  ==> ((Queue.stateHead(Queue.ofSeq(s)) != Queue.stateTail(Queue.ofSeq(s))
-      && Queue.stateHead(Queue.ofSeq(Seq_append(s, n)))
-      == Queue.stateHead(Queue.ofSeq(s)) + 1)
-    || (Queue.stateHead(Queue.ofSeq(s)) == Queue.stateTail(Queue.ofSeq(s))
-      && Queue.stateHead(Queue.ofSeq(Seq_append(s, n)))
-      == Queue.stateHead(Queue.ofSeq(s))))
-  && Queue.stateTail(Queue.ofSeq(Seq_append(s, n)))
-    == Queue.stateTail(Queue.ofSeq(s))
-  && Queue.stateArray(Queue.ofSeq(Seq_append(s, n)))
-    == Queue.stateArray(Queue.ofSeq(s)));
-
-// Effect of push to the abstract state of a Queue
-axiom (forall s: SeqInvoc, n: Invoc :: {Queue.ofSeq(Seq_append(s, n))}
-  invoc_m(n) == Queue.push
-  ==> Queue.stateHead(Queue.ofSeq(Seq_append(s, n)))
-    == Queue.stateHead(Queue.ofSeq(s))
-  && Queue.stateTail(Queue.ofSeq(Seq_append(s, n)))
-    == Queue.stateTail(Queue.ofSeq(s)) + 1
-  && Queue.stateArray(Queue.ofSeq(Seq_append(s, n)))
-    == Queue.stateArray(Queue.ofSeq(s))[
-      Queue.stateTail(Queue.ofSeq(s)) := invoc_k(n)]);
-
-// Effect of size to the abstract state of a Queue
-axiom (forall s: SeqInvoc, n: Invoc :: {Queue.ofSeq(Seq_append(s, n))}
-  invoc_m(n) == Queue.size
-  ==> Queue.stateHead(Queue.ofSeq(Seq_append(s, n)))
-    == Queue.stateHead(Queue.ofSeq(s))
-  && Queue.stateTail(Queue.ofSeq(Seq_append(s, n)))
-    == Queue.stateTail(Queue.ofSeq(s))
-  && Queue.stateArray(Queue.ofSeq(Seq_append(s, n)))
-    == Queue.stateArray(Queue.ofSeq(s)));
-
-
-// ---------- Representation of execution and linearization
-
-// hb(x, y) : x happens-before y.
-// We assume there exists such a function, given by the client program
-function hb(x: Invoc, y: Invoc) : bool;
-axiom (forall n: Invoc :: !hb(n, n));
-
-// A shared global variable that builds the linearization
-var {:layer 1,2} lin: SeqInvoc;
-
-// A map from invocations to the set of prior invocations visible to them
-var {:layer 1,2} vis: [Invoc]SetInvoc;
-
-// The set of invocations that have been called
-var {:layer 0,1} called: [Invoc]bool;
-
-// The set of invocations that have returned
-var {:layer 0,1} returned: [Invoc]bool;
-
-
 // ---------- Heap representation and linearity
 
 
@@ -367,7 +282,204 @@ axiom (forall f: [Ref]Ref, x: Ref, y: Ref, z: Ref, u: Ref, v: Ref :: {f[u := v],
             && (Btwn(f, x, y, u) || Btwn(f, v, y, z)))));
 
 
-// ---------- Shared state and invariant
+// ---------- Types of methods and invocations
+
+type Method;
+
+type Invoc;
+
+// Boilerplate stuff for linear variables
+function {:builtin "MapConst"} MapConstInvocBool(bool) : [Invoc]bool;
+function {:inline} {:linear "this"} TidCollector(x: Invoc) : [Invoc]bool
+{
+  MapConstInvocBool(false)[x := true]
+}
+
+
+// ---------- Representation of execution and linearization
+
+// hb(x, y) : x happens-before y.  // TODO make var, have actions to add these
+// We assume there exists such a function, given by the client program
+function hb(x: Invoc, y: Invoc) : bool;
+axiom (forall n: Invoc :: !hb(n, n));
+
+// A shared global variable that builds the linearization
+var {:layer 1,2} lin: SeqInvoc;
+
+// A map from invocations to the set of prior invocations visible to them
+var {:layer 1,2} vis: [Invoc]SetInvoc;
+
+// The map from invocations to method and argument values is encoded in the Invoc type
+// so as to not further complicate the Queue ADT axioms above
+// The map from invocations to return values is implicitly stored in the ghost vars
+// retK & retS. Since return values are determined at the LPs, we store them at LP time.
+
+procedure {:layer 1} intro_readLin() returns (s: SetInvoc)
+  ensures {:layer 1} s == Set_ofSeq(lin);
+{
+  s := Set_ofSeq(lin);
+}
+
+procedure {:layer 1} intro_write_vis(n: Invoc, s: SetInvoc)
+  modifies vis;
+  ensures {:layer 1} vis == old(vis)[n := s];
+{
+  vis[n] := s;
+}
+
+procedure {:layer 1} {:inline 1} intro_writeLin(n: Invoc)
+  requires {:layer 1} !Seq_elem(n, lin);
+  // To show that linearization is consistent with happens-before
+  requires {:layer 1} (forall n1 : Invoc :: hb(n1, n) ==> Seq_elem(n1, lin));
+  ensures {:layer 1} Seq_elem(n, lin);
+  modifies lin;
+{
+  lin := Seq_append(lin, n);
+}
+
+// Mint a brand new Invoc
+
+// This doesn't work because then "this" is a layer 1 intro variable
+// procedure {:layer 1} freshInvoc(m: Method, k: Key)
+//   returns ({:linear "this"} this: Invoc);
+//   ensures {:layer 1} invoc_m(this) == m && invoc_k(this) == k;
+//   // everything before this has returned  // TODO add to paper, well-formed defn
+//   ensures {:layer 1} (forall n1: Invoc :: hb(n1, this) ==> returned[n1]);
+//   // this has not been called or returned yet
+//   ensures {:layer 1} (!called[this] && !returned[this]);
+
+// This doesn't work because called/returned are layer 1 intro variables..
+// procedure {:atomic} {:layer 1} freshInvoc_atomic(m: Method, k: Key)
+//   returns ({:linear "this"} this: Invoc)
+// {
+//   assume invoc_m(this) == m && invoc_k(this) == k;
+//   // everything before this has returned  // TODO add to paper, well-formed defn
+//   assume (forall n1: Invoc :: hb(n1, this) ==> returned[n1]);
+//   // this has not been called or returned yet
+//   assume (!called[this] && !returned[this]);
+// }
+// procedure {:yields} {:layer 0} {:refines "freshInvoc_atomic"}
+//   freshInvoc(m: Method, k: Key) returns ({:linear "this"} this: Invoc);
+
+
+// ---------- Axioms of the queue ADT
+
+const unique Queue.push, Queue.pop, Queue.size: Method;
+
+function invoc_m(n: Invoc) : Method;
+function invoc_k(n: Invoc) : Key;
+
+type Queue.State;
+
+function Queue.stateArray(s: Queue.State) : [int]Key;
+function Queue.stateHead(s: Queue.State) : int;
+function Queue.stateTail(s: Queue.State) : int;
+
+function Queue.ofSeq(s: SeqInvoc) : Queue.State;
+
+// Effect of pop to the abstract state of a Queue
+axiom (forall s: SeqInvoc, n: Invoc :: {Queue.ofSeq(Seq_append(s, n))}
+  invoc_m(n) == Queue.pop
+  ==> ((Queue.stateHead(Queue.ofSeq(s)) != Queue.stateTail(Queue.ofSeq(s))
+      && Queue.stateHead(Queue.ofSeq(Seq_append(s, n)))
+      == Queue.stateHead(Queue.ofSeq(s)) + 1)
+    || (Queue.stateHead(Queue.ofSeq(s)) == Queue.stateTail(Queue.ofSeq(s))
+      && Queue.stateHead(Queue.ofSeq(Seq_append(s, n)))
+      == Queue.stateHead(Queue.ofSeq(s))))
+  && Queue.stateTail(Queue.ofSeq(Seq_append(s, n)))
+    == Queue.stateTail(Queue.ofSeq(s))
+  && Queue.stateArray(Queue.ofSeq(Seq_append(s, n)))
+    == Queue.stateArray(Queue.ofSeq(s)));
+
+// Effect of push to the abstract state of a Queue
+axiom (forall s: SeqInvoc, n: Invoc :: {Queue.ofSeq(Seq_append(s, n))}
+  invoc_m(n) == Queue.push
+  ==> Queue.stateHead(Queue.ofSeq(Seq_append(s, n)))
+    == Queue.stateHead(Queue.ofSeq(s))
+  && Queue.stateTail(Queue.ofSeq(Seq_append(s, n)))
+    == Queue.stateTail(Queue.ofSeq(s)) + 1
+  && Queue.stateArray(Queue.ofSeq(Seq_append(s, n)))
+    == Queue.stateArray(Queue.ofSeq(s))[
+      Queue.stateTail(Queue.ofSeq(s)) := invoc_k(n)]);
+
+// Effect of size to the abstract state of a Queue
+axiom (forall s: SeqInvoc, n: Invoc :: {Queue.ofSeq(Seq_append(s, n))}
+  invoc_m(n) == Queue.size
+  ==> Queue.stateHead(Queue.ofSeq(Seq_append(s, n)))
+    == Queue.stateHead(Queue.ofSeq(s))
+  && Queue.stateTail(Queue.ofSeq(Seq_append(s, n)))
+    == Queue.stateTail(Queue.ofSeq(s))
+  && Queue.stateArray(Queue.ofSeq(Seq_append(s, n)))
+    == Queue.stateArray(Queue.ofSeq(s)));
+
+
+// ---------- Atomic specification program:
+
+// procedure {:atomic} {:layer 2} hb_action(n1: Invoc, n2: Invoc)
+
+procedure {:atomic} {:layer 2} push_call_atomic({:linear "this"} this: Invoc) {}
+
+procedure {:atomic} {:layer 2} push_atomic(k: Key, x: Ref,
+    {:linear_in "FP"} xFP: [Ref]bool, {:linear "this"} this: Invoc)
+  modifies lin, vis;
+{
+  var my_vis: SetInvoc;
+
+  // Satisfies its functional spec  // TODO instead, add to Inv that abs execution satisfies S
+  assume true;
+
+  // Is absolute
+  // assume my_vis == Set_ofSeq(lin);
+  my_vis := Set_ofSeq(lin);
+
+  lin := Seq_append(lin, this);
+  vis[this] := my_vis;
+}
+
+procedure {:atomic} {:layer 2} push_return_atomic({:linear "this"} this: Invoc) {}
+
+procedure {:atomic} {:layer 2} pop_call_atomic({:linear "this"} this: Invoc) {}
+
+procedure {:atomic} {:layer 2} pop_atomic({:linear "this"} this: Invoc) returns (k: Key)
+  modifies lin, vis;
+{
+  var my_vis: SetInvoc;
+
+  // Satisfies its functional spec
+  assume k == Queue.stateArray(Queue.ofSeq(lin))[Queue.stateHead(Queue.ofSeq(lin))];
+
+  // Is absolute
+  // assume my_vis == Set_ofSeq(lin);  // TODO bug in CIVL
+  my_vis := Set_ofSeq(lin);
+
+  lin := Seq_append(lin, this);
+  vis[this] := my_vis;
+}
+
+procedure {:atomic} {:layer 2} pop_return_atomic({:linear "this"} this: Invoc) {}
+
+procedure {:atomic} {:layer 2} size_call_atomic({:linear "this"} this: Invoc) {}
+
+procedure {:atomic} {:layer 2} size_atomic({:linear "this"} this: Invoc) returns (s: int)
+  modifies lin, vis;
+{
+  var my_vis: SetInvoc;
+
+  // Satisfies its functional spec
+  assume s == Queue.stateTail(Queue.ofSeq(Seq_restr(lin, my_vis)))
+    - Queue.stateHead(Queue.ofSeq(Seq_restr(lin, my_vis)));
+
+  // Is monotonic
+  assume (forall j: Invoc :: hb(j, this) ==> Set_subset(vis[j], my_vis));
+
+  lin := Seq_append(lin, this);
+  vis[this] := my_vis;
+}
+
+procedure {:atomic} {:layer 2} size_return_atomic({:linear "this"} this: Invoc) {}
+
+
+// ---------- Queue implementation: Shared state and invariant
 
 type Key;
 
@@ -392,6 +504,16 @@ var {:layer 0, 1} tailTags: SetInvoc;
 var {:layer 1, 1} nextInvoc: [Ref]Invoc;
 // Witness for node that contains invoc in nextTags
 var {:layer 1, 1} nextRef: [Invoc]Ref;
+
+// Layer 1 witness mapping linearized and not-yet-returned ops to return value
+var {:layer 1,1} retK: [Invoc]Key;
+var {:layer 1,1} retS: [Invoc]int;
+
+// The set of invocations that have been called
+var {:layer 1,1} called: [Invoc]bool;
+
+// The set of invocations that have returned
+var {:layer 1,1} returned: [Invoc]bool;
 
 
 // Abstract state
@@ -591,7 +713,6 @@ procedure {:yields} {:layer 0} {:refines "casHeadTransfer_atomic"}
 // ---------- Primitives for manipulating logical/abstract state
 
 procedure {:layer 1} {:inline 1} intro_writeAbsRefs(k: Key, x: Ref)
-  // ensures {:layer 1} absRefs == old(absRefs)[Queue.stateTail(Queue.ofSeq(lin)) := x];
   modifies absRefs;
 {
   absRefs[Queue.stateTail(Queue.ofSeq(lin))] := x;
@@ -633,84 +754,56 @@ procedure {:layer 1} intro_readNextTags(x: Ref, v: SetInvoc) returns (v1: SetInv
   assert {:layer 1} next[x] != null ==> Set_equal(v1, Set_add(v, nextInvoc[x]));
 }
 
-procedure {:layer 1} intro_readLin() returns (s: SetInvoc)
-  ensures {:layer 1} s == Set_ofSeq(lin);
+procedure {:layer 1} {:inline 1} intro_writeCalled({:linear "this"} this: Invoc)
+  modifies called;
 {
-  s := Set_ofSeq(lin);
-}
-
-procedure {:layer 1} intro_write_vis(n: Invoc, s: SetInvoc)
-  modifies vis;
-  ensures {:layer 1} vis == old(vis)[n := s];
-{
-  vis[n] := s;
-}
-
-procedure {:layer 1} {:inline 1} intro_writeLin(n: Invoc)
-  requires {:layer 1} !Seq_elem(n, lin);
-  // To show that linearization is consistent with happens-before
-  requires {:layer 1} (forall n1 : Invoc :: hb(n1, n) ==> Seq_elem(n1, lin));
-  ensures {:layer 1} Seq_elem(n, lin);
-  modifies lin;
-{
-  lin := Seq_append(lin, n);
-}
-
-// Special call and return actions  // TODO make these instrumentation stuff
-
-procedure {:atomic} {:layer 1} spec_call_atomic(m: Method, k: Key)
-  returns ({:linear "this"} this: Invoc)
-  modifies called, returned;
-{
-  assume m == invoc_m(this) && k == invoc_k(this);
-  // everything before this has returned
-  assume (forall n1: Invoc :: hb(n1, this) ==> returned[n1]);
-  // this has not been called or returned yet
-  assume (!called[this] && !returned[this]);
   called[this] := true;
 }
-procedure {:yields} {:layer 0} {:refines "spec_call_atomic"}
-  spec_call(m: Method, k: Key) returns ({:linear "this"} this: Invoc);
 
-procedure {:atomic} {:layer 1} spec_return_atomic({:linear "this"} this: Invoc)
+procedure {:layer 1} {:inline 1} intro_writeReturned({:linear "this"} this: Invoc)
   modifies returned;
 {
   returned[this] := true;
 }
-procedure {:yields} {:layer 0} {:refines "spec_return_atomic"}
-  spec_return({:linear "this"} this: Invoc);
 
 
-// ---------- queue methods:
+// ---------- Implementation of Queue:
 
-procedure {:atomic} {:layer 2} pop_atomic() returns (k: Key)
-  modifies lin, vis;
+
+procedure {:yields} {:layer 1} {:refines "pop_call_atomic"}
+    pop_call({:linear "this"} this: Invoc)
+  requires {:layer 1} Inv(queueFP, usedFP, start, head, tail, next, data, nextTags, nextInvoc, nextRef, lin, vis, absRefs, called, returned);
+  // everything before this has returned
+  requires {:layer 1} (forall n1: Invoc :: hb(n1, this) ==> returned[n1]);
+  // this has not been called or returned yet
+  requires {:layer 1} (!called[this] && !returned[this]);
+  ensures {:layer 1} Inv(queueFP, usedFP, start, head, tail, next, data, nextTags, nextInvoc, nextRef, lin, vis, absRefs, called, returned);
+  ensures {:layer 1} preLP(called, returned, lin, this);
+  modifies called;
 {
-  var {:linear "this"} this: Invoc; var my_vis: SetInvoc;
-  assume Queue.pop == invoc_m(this);
+  yield;
+  assert {:layer 1} Inv(queueFP, usedFP, start, head, tail, next, data, nextTags, nextInvoc, nextRef, lin, vis, absRefs, called, returned);
+  assert {:layer 1} (forall n1: Invoc :: hb(n1, this) ==> returned[n1]);
+  assert {:layer 1} (!called[this] && !returned[this]);
 
-  // Satisfies its functional spec  // TODO check how Michael did this
-  assume k == Queue.stateArray(Queue.ofSeq(lin))[Queue.stateHead(Queue.ofSeq(lin))];
-
-  lin := Seq_append(lin, this);
-  vis[this] := my_vis;
-  // Is complete -- TODO make predicate  // TODO only writes in lin?
-  assume my_vis == Set_ofSeq(lin);
+  call intro_writeCalled(this);
+  yield;
+  assert {:layer 1} Inv(queueFP, usedFP, start, head, tail, next, data, nextTags, nextInvoc, nextRef, lin, vis, absRefs, called, returned);
+  assert {:layer 1} preLP(called, returned, lin, this);
 }
 
-procedure {:yields} {:layer 1} {:refines "pop_atomic"} pop() returns (k: Key)
-  requires {:layer 1} Inv(queueFP, usedFP, start, head, tail, next, data, nextTags, nextInvoc, nextRef, lin, vis, absRefs, called, returned);
-  ensures {:layer 1} Inv(queueFP, usedFP, start, head, tail, next, data, nextTags, nextInvoc, nextRef, lin, vis, absRefs, called, returned);
+procedure {:yields} {:layer 1} {:refines "pop_atomic"} pop({:linear "this"} this: Invoc)
+  returns (k: Key)
+  requires {:layer 1} Inv(queueFP, usedFP, start, head, tail, next, data, nextTags, nextInvoc, nextRef, lin, vis, absRefs, called, returned) && preLP(called, returned, lin, this);
+  requires {:layer 1} invoc_m(this) == Queue.pop;
+  ensures {:layer 1} Inv(queueFP, usedFP, start, head, tail, next, data, nextTags, nextInvoc, nextRef, lin, vis, absRefs, called, returned) && postLP(called, returned, lin, this);
+  ensures {:layer 1} (forall n1: Invoc :: {Set_elem(n1, vis[this])}
+    Set_elem(n1, vis[this]) ==> Set_elem(n1, Set_ofSeq(lin)));
 {
-  var {:linear "this"} this: Invoc;
   var {:layer 1} my_vis: SetInvoc;
   var b: bool;
   var h, t, hn: Ref;
 
-  yield;
-  assert {:layer 1} Inv(queueFP, usedFP, start, head, tail, next, data, nextTags, nextInvoc, nextRef, lin, vis, absRefs, called, returned);
-
-  call this := spec_call(Queue.pop, k);
   yield;
   assert {:layer 1} Inv(queueFP, usedFP, start, head, tail, next, data, nextTags, nextInvoc, nextRef, lin, vis, absRefs, called, returned) && preLP(called, returned, lin, this);
 
@@ -748,8 +841,8 @@ procedure {:yields} {:layer 1} {:refines "pop_atomic"} pop() returns (k: Key)
       call b := casHeadTransfer(h, hn, this);
       if (b) {
         // Linearization point.
-        call intro_writeLin(this);
         call my_vis := intro_readLin();
+        call intro_writeLin(this);
         call intro_write_vis(this, my_vis);
 
         break;
@@ -762,46 +855,134 @@ procedure {:yields} {:layer 1} {:refines "pop_atomic"} pop() returns (k: Key)
   assert {:layer 1} Inv(queueFP, usedFP, start, head, tail, next, data, nextTags, nextInvoc, nextRef, lin, vis, absRefs, called, returned) && postLP(called, returned, lin, this);
   assert {:layer 1} (forall n1: Invoc :: {Set_elem(n1, vis[this])}
     Set_elem(n1, vis[this]) ==> Set_elem(n1, Set_ofSeq(lin)));
-  call spec_return(this);
+}
+
+procedure {:yields} {:layer 1} {:refines "pop_return_atomic"}
+    pop_return({:linear "this"} this: Invoc)
+  requires {:layer 1} Inv(queueFP, usedFP, start, head, tail, next, data, nextTags, nextInvoc, nextRef, lin, vis, absRefs, called, returned);
+  requires {:layer 1} postLP(called, returned, lin, this);
+  requires {:layer 1} (forall n1: Invoc :: {Set_elem(n1, vis[this])}
+    Set_elem(n1, vis[this]) ==> Set_elem(n1, Set_ofSeq(lin)));
+  ensures {:layer 1} Inv(queueFP, usedFP, start, head, tail, next, data, nextTags, nextInvoc, nextRef, lin, vis, absRefs, called, returned);
+  modifies returned;
+{
+  yield;
+  assert {:layer 1} Inv(queueFP, usedFP, start, head, tail, next, data, nextTags, nextInvoc, nextRef, lin, vis, absRefs, called, returned);
+  assert {:layer 1} postLP(called, returned, lin, this);
+  assert {:layer 1} (forall n1: Invoc :: {Set_elem(n1, vis[this])}
+    Set_elem(n1, vis[this]) ==> Set_elem(n1, Set_ofSeq(lin)));
+
+  call intro_writeReturned(this);
+
+
+  // There is a list from head to null
+  assert {:layer 1} Btwn(next, head, head, null);
+  assert {:layer 1} (forall x: Ref :: {queueFP[x]}{Btwn(next, head, x, null)}
+    known(x) ==> (queueFP[x] <==> (Btwn(next, head, x, null) && x != null)));
+  // Tail is on that list
+  assert {:layer 1} Btwn(next, head, tail, null) && tail != null;
+  // There is also a list from start to head // TODO try just lseg(c, head)
+  assert {:layer 1} Btwn(next, start, start, head);
+  assert {:layer 1} (forall x: Ref :: {usedFP[x]}{Btwn(next, start, x, head)}
+    known(x) ==> (usedFP[x] <==> (Btwn(next, start, x, head) && x != head)));
+  // Terms needed for axiom triggers
+  assert {:layer 1} known(start) && known(head) && known(tail) && known(null) && knownF(next);
+  // Relate abstract state to concrete state:
+  assert {:layer 1} (forall i: int :: {absRefs[i]}
+    i < -1 || Queue.stateTail(Queue.ofSeq(lin)) <= i <==> absRefs[i] == null);
+  assert {:layer 1} absRefs[Queue.stateHead(Queue.ofSeq(lin)) - 1] == head;
+  assert {:layer 1} (forall i: int :: {next[absRefs[i]]}
+    -1 <= i && i < Queue.stateTail(Queue.ofSeq(lin))
+    ==> absRefs[i + 1] == next[absRefs[i]]);
+  assert {:layer 1} (forall i, j: int :: {absRefs[i], absRefs[j]}
+    absRefs[i] == absRefs[j] && absRefs[i] != null ==> i == j);
+  assert {:layer 1} (forall i: int :: {Queue.stateArray(Queue.ofSeq(lin))[i], data[absRefs[i]]}
+    0 <= i && i < Queue.stateTail(Queue.ofSeq(lin))
+    ==> Queue.stateArray(Queue.ofSeq(lin))[i] == data[absRefs[i]]);
+  assert {:layer 1} (forall y: Ref :: {Btwn(next, head, y, null), next[y]} known(y) ==>
+    (Btwn(next, head, y, null) && y != null && next[y] == null
+    ==> y == absRefs[Queue.stateTail(Queue.ofSeq(lin)) - 1]));
+  // nextTags only contains singleton sets of push operations
+  assert {:layer 1} (forall y: Ref :: {known(y)} known(y) ==>  // TODO trigger?
+    (Btwn(next, start, y, null) && y != null && next[y] != null
+    ==> nextTags[y] == Set(nextInvoc[y]) && invoc_m(nextInvoc[y]) == Queue.push));
+  assert {:layer 1} nextTags[absRefs[Queue.stateTail(Queue.ofSeq(lin)) - 1]] == Set_empty;
+  // lin is made up of nextInvoc[y] for y in the queue
+  assert {:layer 1} (forall n: Invoc :: {Seq_elem(n, lin)} known(nextRef[n]) && invoc_m(n) == Queue.push ==>
+    (Seq_elem(n, lin) 
+      <==> Btwn(next, start, nextRef[n], null)
+        && nextRef[n] != null && next[nextRef[n]] != null));
+  // lin is ordered by order of nodes in queue
+  assert {:layer 1} (forall n1, n2: Invoc :: {Seq_ord(lin, n1, n2)}
+    known(nextRef[n1]) && known(nextRef[n2]) ==>
+    (invoc_m(n1) == Queue.push && invoc_m(n2) == Queue.push
+    && Seq_elem(n1, lin) && Seq_elem(n2, lin)
+    ==> (Seq_ord(lin, n1, n2)
+      <==> Btwn(next, nextRef[n1], nextRef[n1], nextRef[n2]) && nextRef[n1] != nextRef[n2])));
+  // Default value for nextRef is null
+  assert {:layer 1} (forall n: Invoc :: {nextRef[n]}
+    !Seq_elem(n, lin) || invoc_m(n) != Queue.push ==> nextRef[n] == null);
+  // nextRef is injective (for pushes in lin)
+  assert {:layer 1} (forall n1, n2: Invoc :: {nextRef[n1], nextRef[n2]}
+    Seq_elem(n1, lin) && Seq_elem(n2, lin)
+    && invoc_m(n1) == Queue.push && invoc_m(n2) == Queue.push
+    && nextRef[n1] == nextRef[n2] ==> n1 == n2);
+  // nextRef and nextInvoc are inverses
+  // && (forall n: Invoc :: {nextInvoc[nextRef[n]]} nextInvoc[nextRef[n]] == n)
+  assert {:layer 1} (forall y: Ref :: {nextRef[nextInvoc[y]]} known(y) ==>
+    (Btwn(next, start, y, null) && next[y] != null ==> nextRef[nextInvoc[y]] == y));
+  // lin only contains called things
+  assert {:layer 1} (forall n: Invoc :: {Seq_elem(n, lin)} Seq_elem(n, lin) ==> called[n]);
+  assert {:layer 1} Seq_distinct(lin);
+  // vis sets only contain linearized ops
+  assert {:layer 1} (forall n1, n2: Invoc :: {Set_elem(n1, vis[n2])}
+    Set_elem(n1, vis[n2]) && returned[n2] ==> Set_elem(n1, Set_ofSeq(lin)));
+  // Used to infer that invocations don't modify vis after they've returned
+  assert {:layer 1} (forall n1, n2 : Invoc :: called[n1] && hb(n2, n1) ==> returned[n2]);
+  // To establish precondition of intro_writeLin
+  assert {:layer 1} (forall n: Invoc :: returned[n] ==> Seq_elem(n, lin));
+  // Axiom of heap encoding
+  assert {:layer 1} next[null] == null;
   yield;
   assert {:layer 1} Inv(queueFP, usedFP, start, head, tail, next, data, nextTags, nextInvoc, nextRef, lin, vis, absRefs, called, returned);
 }
 
-procedure {:atomic} {:layer 2} push_atomic(k: Key, x: Ref,
-    {:linear_in "FP"} xFP: [Ref]bool)
-  modifies lin, vis;
+
+procedure {:yields} {:layer 1} {:refines "push_call_atomic"}
+    push_call({:linear "this"} this: Invoc)
+  requires {:layer 1} Inv(queueFP, usedFP, start, head, tail, next, data, nextTags, nextInvoc, nextRef, lin, vis, absRefs, called, returned);
+  // everything before this has returned
+  requires {:layer 1} (forall n1: Invoc :: hb(n1, this) ==> returned[n1]);
+  // this has not been called or returned yet
+  requires {:layer 1} (!called[this] && !returned[this]);
+  ensures {:layer 1} Inv(queueFP, usedFP, start, head, tail, next, data, nextTags, nextInvoc, nextRef, lin, vis, absRefs, called, returned);
+  ensures {:layer 1} preLP(called, returned, lin, this);
+  modifies called;
 {
-  var {:linear "this"} this: Invoc; var my_vis: SetInvoc;
-  assume Queue.push == invoc_m(this) && k == invoc_k(this);
+  yield;
+  assert {:layer 1} Inv(queueFP, usedFP, start, head, tail, next, data, nextTags, nextInvoc, nextRef, lin, vis, absRefs, called, returned);
+  assert {:layer 1} (forall n1: Invoc :: hb(n1, this) ==> returned[n1]);
+  assert {:layer 1} (!called[this] && !returned[this]);
 
-  // Satisfies its functional spec
-  assume true;
-
-  lin := Seq_append(lin, this);
-  vis[this] := my_vis;
-  // Is complete -- TODO make predicate
-  assume my_vis == Set_ofSeq(lin);
+  call intro_writeCalled(this);
+  yield;
+  assert {:layer 1} Inv(queueFP, usedFP, start, head, tail, next, data, nextTags, nextInvoc, nextRef, lin, vis, absRefs, called, returned);
+  assert {:layer 1} preLP(called, returned, lin, this);
 }
 
 procedure {:yields} {:layer 1} {:refines "push_atomic"} push(k: Key, x: Ref,
-    {:linear_in "FP"} xFP: [Ref]bool)
+    {:linear_in "FP"} xFP: [Ref]bool, {:linear "this"} this: Invoc)
   requires {:layer 1} xFP[x] && next[x] == null && data[x] == k && nextTags[x] == Set_empty;  // TODO alloc x with k
   requires {:layer 1} !Btwn(next, head, x, null);  // TODO get from linearity
-  requires {:layer 1} Inv(queueFP, usedFP, start, head, tail, next, data, nextTags, nextInvoc, nextRef, lin, vis, absRefs, called, returned);
-  ensures {:layer 1} Inv(queueFP, usedFP, start, head, tail, next, data, nextTags, nextInvoc, nextRef, lin, vis, absRefs, called, returned);
+  requires {:layer 1} Inv(queueFP, usedFP, start, head, tail, next, data, nextTags, nextInvoc, nextRef, lin, vis, absRefs, called, returned) && preLP(called, returned, lin, this);
+  requires {:layer 1} invoc_m(this) == Queue.push && invoc_k(this) == k;
+  ensures {:layer 1} Inv(queueFP, usedFP, start, head, tail, next, data, nextTags, nextInvoc, nextRef, lin, vis, absRefs, called, returned) && postLP(called, returned, lin, this);
 {
-  var {:linear "this"} this: Invoc;
   var {:layer 1} my_vis: SetInvoc;
   var t, tn: Ref;
   var b: bool;
   var {:linear "FP"} tFP: [Ref]bool;
 
-  yield;
-  assert {:layer 1} Inv(queueFP, usedFP, start, head, tail, next, data, nextTags, nextInvoc, nextRef, lin, vis, absRefs, called, returned);
-  assert {:layer 1} !Btwn(next, head, x, null);
-  assert {:layer 1} xFP[x] && next[x] == null && data[x] == k && nextTags[x] == Set_empty;
-
-  call this := spec_call(Queue.push, k);
   yield;
   assert {:layer 1} Inv(queueFP, usedFP, start, head, tail, next, data, nextTags, nextInvoc, nextRef, lin, vis, absRefs, called, returned) && preLP(called, returned, lin, this);
   assert {:layer 1} !Btwn(next, head, x, null);
@@ -835,8 +1016,8 @@ procedure {:yields} {:layer 1} {:refines "push_atomic"} push(k: Key, x: Ref,
         // Linearization point.
         call intro_writeNextInvoc(t, this);
         call intro_writeAbsRefs(k, x);
-        call intro_writeLin(this);
         call my_vis := intro_readLin();
+        call intro_writeLin(this);
         call intro_write_vis(this, my_vis);
 
         break;
@@ -853,44 +1034,64 @@ procedure {:yields} {:layer 1} {:refines "push_atomic"} push(k: Key, x: Ref,
   assert {:layer 1} Inv(queueFP, usedFP, start, head, tail, next, data, nextTags, nextInvoc, nextRef, lin, vis, absRefs, called, returned) && postLP(called, returned, lin, this);
   assert {:layer 1} (forall n1: Invoc :: {Set_elem(n1, vis[this])}
     Set_elem(n1, vis[this]) ==> Set_elem(n1, Set_ofSeq(lin)));
-  call spec_return(this);
-  yield;
-  assert {:expand} {:layer 1} Inv(queueFP, usedFP, start, head, tail, next, data, nextTags, nextInvoc, nextRef, lin, vis, absRefs, called, returned);
 }
 
-
-procedure {:atomic} {:layer 2} size_atomic() returns (s: int)
-  modifies lin, vis;
-{
-  var {:linear "this"} this: Invoc; var my_vis: SetInvoc;
-  assume Queue.size == invoc_m(this);
-
-  // Satisfies its functional spec
-  assume s == Queue.stateTail(Queue.ofSeq(Seq_restr(lin, my_vis)))
-    - Queue.stateHead(Queue.ofSeq(Seq_restr(lin, my_vis)));
-
-  lin := Seq_append(lin, this);
-  vis[this] := my_vis;
-  // Is monotonic
-  assume (forall j: Invoc :: hb(j, this) ==> Set_subset(vis[j], my_vis));
-}
-
-procedure {:yields} {:layer 1} {:refines "size_atomic"} size() returns (s: int)
+procedure {:yields} {:layer 1} {:refines "push_return_atomic"}
+    push_return({:linear "this"} this: Invoc)
   requires {:layer 1} Inv(queueFP, usedFP, start, head, tail, next, data, nextTags, nextInvoc, nextRef, lin, vis, absRefs, called, returned);
+  requires {:layer 1} postLP(called, returned, lin, this);
+  requires {:layer 1} (forall n1: Invoc :: {Set_elem(n1, vis[this])}
+    Set_elem(n1, vis[this]) ==> Set_elem(n1, Set_ofSeq(lin)));
   ensures {:layer 1} Inv(queueFP, usedFP, start, head, tail, next, data, nextTags, nextInvoc, nextRef, lin, vis, absRefs, called, returned);
+  modifies returned;
 {
-  var {:linear "this"} this: Invoc;
-  var {:layer 1} my_vis: SetInvoc; var TODO: Key;
+  yield;
+  assert {:layer 1} Inv(queueFP, usedFP, start, head, tail, next, data, nextTags, nextInvoc, nextRef, lin, vis, absRefs, called, returned);
+  assert {:layer 1} postLP(called, returned, lin, this);
+  assert {:layer 1} (forall n1: Invoc :: {Set_elem(n1, vis[this])}
+    Set_elem(n1, vis[this]) ==> Set_elem(n1, Set_ofSeq(lin)));
+
+  call intro_writeReturned(this);
+
+  yield;
+  assert {:layer 1} Inv(queueFP, usedFP, start, head, tail, next, data, nextTags, nextInvoc, nextRef, lin, vis, absRefs, called, returned);
+}
+
+
+procedure {:yields} {:layer 1} {:refines "size_call_atomic"}
+    size_call({:linear "this"} this: Invoc)
+  requires {:layer 1} Inv(queueFP, usedFP, start, head, tail, next, data, nextTags, nextInvoc, nextRef, lin, vis, absRefs, called, returned);
+  // everything before this has returned
+  requires {:layer 1} (forall n1: Invoc :: hb(n1, this) ==> returned[n1]);
+  // this has not been called or returned yet
+  requires {:layer 1} (!called[this] && !returned[this]);
+  ensures {:layer 1} Inv(queueFP, usedFP, start, head, tail, next, data, nextTags, nextInvoc, nextRef, lin, vis, absRefs, called, returned);
+  ensures {:layer 1} preLP(called, returned, lin, this);
+  modifies called;
+{
+  yield;
+  assert {:layer 1} Inv(queueFP, usedFP, start, head, tail, next, data, nextTags, nextInvoc, nextRef, lin, vis, absRefs, called, returned);
+  assert {:layer 1} (forall n1: Invoc :: hb(n1, this) ==> returned[n1]);
+  assert {:layer 1} (!called[this] && !returned[this]);
+
+  call intro_writeCalled(this);
+  yield;
+  assert {:layer 1} Inv(queueFP, usedFP, start, head, tail, next, data, nextTags, nextInvoc, nextRef, lin, vis, absRefs, called, returned);
+  assert {:layer 1} preLP(called, returned, lin, this);
+}
+
+procedure {:yields} {:layer 1} {:refines "size_atomic"} size({:linear "this"} this: Invoc) returns (s: int)
+  requires {:layer 1} Inv(queueFP, usedFP, start, head, tail, next, data, nextTags, nextInvoc, nextRef, lin, vis, absRefs, called, returned) && preLP(called, returned, lin, this);
+  requires {:layer 1} invoc_m(this) == Queue.size;
+  ensures {:layer 1} Inv(queueFP, usedFP, start, head, tail, next, data, nextTags, nextInvoc, nextRef, lin, vis, absRefs, called, returned) && postLP(called, returned, lin, this);
+{
+  var {:layer 1} my_vis: SetInvoc;
   var {:layer 1} t0i: int; var {:layer 1} ci: int;
   var {:layer 1} t0: Ref;
   var c, cn: Ref;
   var {:layer 1} old_vis: SetInvoc;
   var {:layer 1} old_c: Ref;
 
-  yield;
-  assert {:layer 1} Inv(queueFP, usedFP, start, head, tail, next, data, nextTags, nextInvoc, nextRef, lin, vis, absRefs, called, returned);
-
-  call this := spec_call(Queue.size, TODO);
   yield;
   assert {:layer 1} Inv(queueFP, usedFP, start, head, tail, next, data, nextTags, nextInvoc, nextRef, lin, vis, absRefs, called, returned) && preLP(called, returned, lin, this);
 
@@ -1059,13 +1260,30 @@ procedure {:yields} {:layer 1} {:refines "size_atomic"} size() returns (s: int)
   // Linearization point.
   call intro_writeLin(this);
   call intro_write_vis(this, my_vis);
+
   yield;
   assert {:layer 1} Inv(queueFP, usedFP, start, head, tail, next, data, nextTags, nextInvoc, nextRef, lin, vis, absRefs, called, returned) && postLP(called, returned, lin, this);
   assert {:layer 1} (forall n1: Invoc :: {Set_elem(n1, vis[this])}
     Set_elem(n1, vis[this]) ==> Set_elem(n1, Set_ofSeq(lin)));
+}
 
-  call spec_return(this);
+procedure {:yields} {:layer 1} {:refines "size_return_atomic"}
+    size_return({:linear "this"} this: Invoc)
+  requires {:layer 1} Inv(queueFP, usedFP, start, head, tail, next, data, nextTags, nextInvoc, nextRef, lin, vis, absRefs, called, returned);
+  requires {:layer 1} postLP(called, returned, lin, this);
+  requires {:layer 1} (forall n1: Invoc :: {Set_elem(n1, vis[this])}
+    Set_elem(n1, vis[this]) ==> Set_elem(n1, Set_ofSeq(lin)));
+  ensures {:layer 1} Inv(queueFP, usedFP, start, head, tail, next, data, nextTags, nextInvoc, nextRef, lin, vis, absRefs, called, returned);
+  modifies returned;
+{
   yield;
   assert {:layer 1} Inv(queueFP, usedFP, start, head, tail, next, data, nextTags, nextInvoc, nextRef, lin, vis, absRefs, called, returned);
-  return;
+  assert {:layer 1} postLP(called, returned, lin, this);
+  assert {:layer 1} (forall n1: Invoc :: {Set_elem(n1, vis[this])}
+    Set_elem(n1, vis[this]) ==> Set_elem(n1, Set_ofSeq(lin)));
+
+  call intro_writeReturned(this);
+
+  yield;
+  assert {:layer 1} Inv(queueFP, usedFP, start, head, tail, next, data, nextTags, nextInvoc, nextRef, lin, vis, absRefs, called, returned);
 }
