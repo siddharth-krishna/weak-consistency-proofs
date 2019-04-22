@@ -329,6 +329,7 @@ procedure {:yields} {:layer 1} {:refines "atomic_pop"} pop() returns (k: Key)
 
     call t := readTail();
     // This is the LP in the Empty case, but we don't know this until later!
+    // TODO try checking if h == t && next[h] == null in ghost code and forcing LP to happen here?
     assert {:layer 1} h == t && next[h] == null ==> absHead == absTail;
     yield;
     assert {:layer 1} Inv(queueFP, usedFP, start, head, tail, next, data, absArray, absRefs, absHead, absTail);
