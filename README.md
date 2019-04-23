@@ -15,7 +15,12 @@ $ make
 
 ## Structure
 
-- `lib/`: TODO
+- `proofs/`: The case studies from the paper. Organized as:
+    * `prelude/`: Common definitions, axiomatizations of sets, sequences, the heap.
+    * `adts/`: The ADT definitions and atomic specification transition systems.
+    * `impls/`: The concurrent implementations, and proofs that they are consistent
+        with their specification.
+- `lib/`: Old version of array-map proof.
 - `misc/`: Contains miscellaneous boogie proofs and work-in-progress.
     * `simpleConcurrent/`: Contains java packages to be used for testing with Violat.
     * `build.sh`: Shell commands to be used for Violat testing.
