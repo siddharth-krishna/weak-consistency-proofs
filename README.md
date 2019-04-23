@@ -9,9 +9,21 @@ Provably correct implementations of weakly-consistent data structures.
 
 ## Usage
 
+To verify the map implementation:
+
 ```bash
-$ make
+$ boogie -noinfer -typeEncoding:m -vcsCores:8 proofs/prelude/*.bpl proofs/adts/map.bpl proofs/impls/array-map.bpl
 ```
+
+To verify the queue implementation:
+
+```bash
+$ boogie -noinfer -typeEncoding:m -vcsCores:8 proofs/prelude/*.bpl proofs/adts/queue.bpl proofs/impls/ms-queue.bpl
+```
+
+<!-- ```bash
+$ make
+``` -->
 
 ## Structure
 
