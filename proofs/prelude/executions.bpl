@@ -58,3 +58,15 @@ procedure {:layer 1} {:inline 1} intro_writeLin(n: Invoc)
   lin := Seq_append(lin, n);
 }
 
+
+// ---------- Consistency levels
+
+function {:inline} Consistency.absolute(lin: SeqInvoc, vis: [Invoc]SetInvoc,
+    n: Invoc, n_vis: SetInvoc): bool {
+  n_vis == Set_ofSeq(lin)
+}
+
+function {:inline} Consistency.monotonic(lin: SeqInvoc, vis: [Invoc]SetInvoc,
+    n: Invoc, n_vis: SetInvoc): bool {
+  (forall i: Invoc :: hb(i, n) ==> Set_subset(vis[i], n_vis))
+}

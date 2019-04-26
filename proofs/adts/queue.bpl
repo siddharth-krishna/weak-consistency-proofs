@@ -72,9 +72,7 @@ procedure {:atomic} {:layer 2} push_atomic(k: Key, x: Ref,
   // Satisfies its functional spec  // TODO instead, add to Inv that abs execution satisfies S
   assume true;
 
-  // Is absolute
-  // assume my_vis == Set_ofSeq(lin);
-  my_vis := Set_ofSeq(lin);
+  assume Consistency.absolute(lin, vis, this, my_vis);
 
   lin := Seq_append(lin, this);
   vis[this] := my_vis;
@@ -92,9 +90,7 @@ procedure {:atomic} {:layer 2} pop_atomic({:linear "this"} this: Invoc) returns 
   // Satisfies its functional spec
   assume k == Queue.stateArray(Queue.ofSeq(lin))[Queue.stateHead(Queue.ofSeq(lin))];
 
-  // Is absolute
-  // assume my_vis == Set_ofSeq(lin);  // TODO bug in CIVL
-  my_vis := Set_ofSeq(lin);
+  assume Consistency.absolute(lin, vis, this, my_vis);
 
   lin := Seq_append(lin, this);
   vis[this] := my_vis;
@@ -113,8 +109,7 @@ procedure {:atomic} {:layer 2} size_atomic({:linear "this"} this: Invoc) returns
   assume s == Queue.stateTail(Queue.ofSeq(Seq_restr(lin, my_vis)))
     - Queue.stateHead(Queue.ofSeq(Seq_restr(lin, my_vis)));
 
-  // Is monotonic
-  assume (forall j: Invoc :: hb(j, this) ==> Set_subset(vis[j], my_vis));
+  assume Consistency.monotonic(lin, vis, this, my_vis);
 
   lin := Seq_append(lin, this);
   vis[this] := my_vis;

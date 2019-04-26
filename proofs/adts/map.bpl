@@ -93,9 +93,7 @@ procedure {:atomic} {:layer 2} put_spec(k: int, v: int, {:linear "this"} this: I
   assume true;
   abs[k] := v;
 
-  // Is absolute
-  // assume my_vis == Set_ofSeq(lin);
-  my_vis := Set_ofSeq(lin);
+  assume Consistency.absolute(lin, vis, this, my_vis);
 
   lin := Seq_append(lin, this);
   vis[this] := my_vis;
@@ -113,9 +111,7 @@ procedure {:atomic} {:layer 2} get_spec(k: int, {:linear "this"} this: Invoc) re
   // Get satisfies its functional spec
   v := abs[k];
 
-  // Get is absolute
-  // assume my_vis == Set_ofSeq(lin);
-  my_vis := Set_ofSeq(lin);
+  assume Consistency.absolute(lin, vis, this, my_vis);
 
   lin := Seq_append(lin, this);
   vis[this] := my_vis;
@@ -142,8 +138,7 @@ procedure {:atomic} {:layer 2} contains_spec(v: int, {:linear "this"} this: Invo
   // Contains satisfies its functional spec
   assume contains_func_spec(my_vis, lin, witness_k, v, res);
 
-  // Contains is monotonic
-  assume (forall j: Invoc :: hb(j, this) ==> Set_subset(vis[j], my_vis));
+  assume Consistency.monotonic(lin, vis, this, my_vis);
 
   lin := Seq_append(lin, this);
   vis[this] := my_vis;
