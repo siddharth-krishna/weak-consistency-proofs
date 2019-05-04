@@ -12,13 +12,13 @@ Provably correct implementations of weakly-consistent data structures.
 To verify the map implementation:
 
 ```bash
-$ boogie -noinfer -typeEncoding:m -vcsCores:8 proofs/prelude/*.bpl proofs/adts/map.bpl proofs/impls/array-map.bpl
+$ boogie -noinfer -typeEncoding:m -useArrayTheory -vcsCores:8 proofs/prelude/*.bpl proofs/adts/map.bpl proofs/impls/array-map.bpl
 ```
 
 To verify the queue implementation:
 
 ```bash
-$ boogie -noinfer -typeEncoding:m -vcsCores:8 proofs/prelude/*.bpl proofs/adts/queue.bpl proofs/impls/ms-queue.bpl
+$ boogie -noinfer -typeEncoding:m -useArrayTheory -vcsCores:8 proofs/prelude/*.bpl proofs/adts/queue.bpl proofs/impls/ms-queue.bpl
 ```
 
 <!-- ```bash

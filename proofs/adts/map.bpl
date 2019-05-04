@@ -65,13 +65,13 @@ axiom (forall s0, s1, t: SetInvoc, k: int ::
 
 // Map.restr to k doesn't change if we take union with stuff != k
 axiom (forall s, t: SetInvoc, k: int :: {Map.restr(Set_union(s, t), k)}
-  (forall n: Invoc :: Set_elem(n, t) ==> invoc_m(n) != Map.put || invoc_k(n) != k)
+  (forall n: Invoc :: t[n] ==> invoc_m(n) != Map.put || invoc_k(n) != k)
   ==> Map.restr(Set_union(s, t), k) == Map.restr(s, k));
 
 // Union of disjoint keys means state comes from one of the two sets
 procedure {:layer 1} lemma_state_Set_union(k: int, s, t: SetInvoc);
-  requires (forall n: Invoc :: Set_elem(n, s) ==> invoc_k(n) < k);
-  requires (forall n: Invoc :: Set_elem(n, t) ==> k <= invoc_k(n));
+  requires (forall n: Invoc :: s[n] ==> invoc_k(n) < k);
+  requires (forall n: Invoc :: t[n] ==> k <= invoc_k(n));
   ensures (forall i: int :: 0 <= i && i < k ==>
     Map.ofSeq(Seq_restr(lin, Set_union(s, t)))[i] == Map.ofSeq(Seq_restr(lin, s))[i]);
   ensures (forall i: int :: k <= i && i < tabLen ==>

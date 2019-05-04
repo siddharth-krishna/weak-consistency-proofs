@@ -6,6 +6,101 @@
 
 /** Sets and Sequences */
 
+// ---------- Types and axiomatization of sets (of invocations)
+
+type SetInvoc = [Invoc]bool;
+
+function Set_card(SetInvoc): int;
+axiom (forall s: SetInvoc :: { Set_card(s) } 0 <= Set_card(s));
+
+function Set_empty(): SetInvoc;
+axiom (forall o: Invoc :: { Set_empty()[o] } !Set_empty()[o]);
+axiom (forall s: SetInvoc :: { Set_card(s) }
+  (Set_card(s) == 0 <==> s == Set_empty()) &&
+  (Set_card(s) != 0 ==> (exists x: Invoc :: s[x])));
+
+// the empty set could be of anything
+//axiom (forall t: Ty :: { $Is(Set_empty() : [Invoc]bool, TSet(t)) } $Is(Set_empty() : [Invoc]bool, TSet(t)));
+
+function Set(Invoc): SetInvoc;
+axiom (forall r: Invoc :: { Set(r) } Set(r)[r]);
+axiom (forall r: Invoc, o: Invoc :: { Set(r)[o] } Set(r)[o] <==> r == o);
+axiom (forall r: Invoc :: { Set_card(Set(r)) } Set_card(Set(r)) == 1);
+
+function Set_add(SetInvoc, Invoc): SetInvoc;
+axiom (forall a: SetInvoc, x: Invoc, o: Invoc :: { Set_add(a,x)[o] }
+  Set_add(a,x)[o] <==> o == x || a[o]);
+axiom (forall a: SetInvoc, x: Invoc :: { Set_add(a, x) }
+  Set_add(a, x)[x]);
+axiom (forall a: SetInvoc, x: Invoc, y: Invoc :: { Set_add(a, x), a[y] }
+  a[y] ==> Set_add(a, x)[y]);
+axiom (forall a: SetInvoc, x: Invoc :: { Set_card(Set_add(a, x)) }
+  a[x] ==> Set_card(Set_add(a, x)) == Set_card(a));
+axiom (forall a: SetInvoc, x: Invoc :: { Set_card(Set_add(a, x)) }
+  !a[x] ==> Set_card(Set_add(a, x)) == Set_card(a) + 1);
+
+function Set_union(SetInvoc, SetInvoc): SetInvoc;
+axiom (forall a: SetInvoc, b: SetInvoc, o: Invoc :: { Set_union(a,b)[o] }
+  Set_union(a,b)[o] <==> a[o] || b[o]);
+axiom (forall a, b: SetInvoc, y: Invoc :: { Set_union(a, b), a[y] }
+  a[y] ==> Set_union(a, b)[y]);
+axiom (forall a, b: SetInvoc, y: Invoc :: { Set_union(a, b), b[y] }
+  b[y] ==> Set_union(a, b)[y]);
+axiom (forall a, b: SetInvoc :: { Set_union(a, b) }
+  Set_disjoint(a, b) ==>
+    Set_diff(Set_union(a, b), a) == b &&
+    Set_diff(Set_union(a, b), b) == a);
+// Follows from the general union axiom, but might be still worth including, because disjoint union is a common case:
+// axiom (forall a, b: SetInvoc :: { Set_card(Set_union(a, b)) }
+//   Set_disjoint(a, b) ==>
+//     Set_card(Set_union(a, b)) == Set_card(a) + Set_card(b));
+
+function Set_inter(SetInvoc, SetInvoc): SetInvoc;
+axiom (forall a: SetInvoc, b: SetInvoc, o: Invoc :: { Set_inter(a,b)[o] }
+  Set_inter(a,b)[o] <==> a[o] && b[o]);
+
+axiom (forall a, b: SetInvoc :: { Set_union(Set_union(a, b), b) }
+  Set_union(Set_union(a, b), b) == Set_union(a, b));
+axiom (forall a, b: SetInvoc :: { Set_union(a, Set_union(a, b)) }
+  Set_union(a, Set_union(a, b)) == Set_union(a, b));
+axiom (forall a, b: SetInvoc :: { Set_inter(Set_inter(a, b), b) }
+  Set_inter(Set_inter(a, b), b) == Set_inter(a, b));
+axiom (forall a, b: SetInvoc :: { Set_inter(a, Set_inter(a, b)) }
+  Set_inter(a, Set_inter(a, b)) == Set_inter(a, b));
+axiom (forall a, b: SetInvoc :: { Set_card(Set_union(a, b)) }{ Set_card(Set_inter(a, b)) }
+  Set_card(Set_union(a, b)) + Set_card(Set_inter(a, b)) == Set_card(a) + Set_card(b));
+
+function Set_diff(SetInvoc, SetInvoc): SetInvoc;
+axiom (forall a: SetInvoc, b: SetInvoc, o: Invoc :: { Set_diff(a,b)[o] }
+  Set_diff(a,b)[o] <==> a[o] && !b[o]);
+axiom (forall a, b: SetInvoc, y: Invoc :: { Set_diff(a, b), b[y] }
+  b[y] ==> !Set_diff(a, b)[y] );
+axiom (forall a, b: SetInvoc ::
+  { Set_card(Set_diff(a, b)) }
+  Set_card(Set_diff(a, b)) + Set_card(Set_diff(b, a))
+  + Set_card(Set_inter(a, b))
+    == Set_card(Set_union(a, b)) &&
+  Set_card(Set_diff(a, b)) == Set_card(a) - Set_card(Set_inter(a, b)));
+
+function Set_subset(SetInvoc, SetInvoc): bool;
+axiom(forall a: SetInvoc, b: SetInvoc :: { Set_subset(a,b) }
+  Set_subset(a,b) <==> (forall o: Invoc :: {a[o]} {b[o]} a[o] ==> b[o]));
+// axiom(forall a: SetInvoc, b: SetInvoc ::
+//   { Set_subset(a,b), Set_card(a), Set_card(b) }  // very restrictive trigger
+//   Set_subset(a,b) ==> Set_card(a) <= Set_card(b));
+
+
+function Set_equal(SetInvoc, SetInvoc): bool;
+axiom(forall a: SetInvoc, b: SetInvoc :: { Set_equal(a,b) }
+  Set_equal(a,b) <==> (forall o: Invoc :: {a[o]} {b[o]} a[o] <==> b[o]));
+axiom(forall a: SetInvoc, b: SetInvoc :: { Set_equal(a,b) }  // extensionality axiom for sets
+  Set_equal(a,b) ==> a == b);
+
+function Set_disjoint(SetInvoc, SetInvoc): bool;
+axiom (forall a: SetInvoc, b: SetInvoc :: { Set_disjoint(a,b) }
+  Set_disjoint(a,b) <==> (forall o: Invoc :: {a[o]} {b[o]} !a[o] || !b[o]));
+
+
 // ---------- Types and axiomatization of sequences (of invocations)
 
 // Sequences of invocations
@@ -20,126 +115,17 @@ axiom (forall n1, n2: Invoc, s: SeqInvoc :: {Seq_elem(n1, Seq_append(s, n2))}
        Seq_elem(n1, Seq_append(s, n2)) <==> Seq_elem(n1, s) || n1 == n2);
 
 
-// ---------- Types and axiomatization of sets (of invocations)  // TODO unify
-
-// Sets of invocations
-type SetInvoc;
-
-const Set_empty: SetInvoc;
-
-function Set(n: Invoc) : SetInvoc;  // singleton set
-
-function Set_elem(n: Invoc, s: SetInvoc) : bool;
-
-function Set_subset(s: SetInvoc, t: SetInvoc) : bool;
-
-function Set_equal(s, t: SetInvoc) : bool;  // helper function to prove sets are equal
-
-// extensionality
-axiom (forall s, t: SetInvoc :: {Set_equal(s, t)}
-  (forall n: Invoc :: Set_elem(n, s) <==> Set_elem(n, t)) ==> Set_equal(s, t) && s == t);
-
-// Set_empty is a subset of anything
-axiom (forall s: SetInvoc :: Set_subset(Set_empty, s));
-
-// Nothing is an elem of Set_empty
-axiom (forall n: Invoc :: !Set_elem(n, Set_empty));
-
-// Set(n) definition
-axiom (forall n1, n2: Invoc :: {Set_elem(n2, Set(n1))}
-  Set_elem(n2, Set(n1)) <==> n2 == n1);
-
-// subset is reflexive
-axiom (forall s: SetInvoc :: Set_subset(s, s));
-
-// subset is transitive
-axiom (forall s, t, u: SetInvoc ::
-    {Set_subset(s, t), Set_subset(t, u), Set_subset(s, u)}
-  Set_subset(s, t) && Set_subset(t, u) ==> Set_subset(s, u));
-
-// definition of subset in terms of elem
-axiom (forall s, t: SetInvoc :: {Set_subset(s, t)}
-  (forall n: Invoc :: Set_elem(n, s) ==> Set_elem(n, t)) ==> Set_subset(s, t));
-axiom (forall s, t: SetInvoc, n: Invoc ::
-    {Set_subset(s, t), Set_elem(n, s)} {Set_subset(s, t), Set_elem(n, t)}
-  Set_subset(s, t) && Set_elem(n, s) ==> Set_elem(n, t));
-
-function Set_union(s1: SetInvoc, s2: SetInvoc) returns (t: SetInvoc);
-
-// union is idempotent
-axiom (forall s: SetInvoc :: s == Set_union(s, s));
-
-// union is associative
-axiom (forall s, t: SetInvoc :: {Set_union(s, t), Set_union(t, s)}
-  Set_union(s, t) == Set_union(t, s));
-
-// union preserves subset
-axiom (forall s1, s2, s3: SetInvoc :: {Set_subset(s1, s2), Set_subset(s1, Set_union(s2, s3))}
-  Set_subset(s1, s2) ==> Set_subset(s1, Set_union(s2, s3)));
-
-// union with empty
-axiom (forall s: SetInvoc :: Set_union(s, Set_empty) == s);
-axiom (forall s: SetInvoc :: Set_union(Set_empty, s) == s);
-
-// union is monotonic w.r.t subset
-// axiom (forall s, t1, t2: SetInvoc ::
-//   Set_subset(t1, t2) ==> Set_subset(Set_union(s, t1), Set_union(s, t2)));
-
-// axiom (forall s, t1, t2: SetInvoc ::
-//   Set_subset(t1, s) && Set_subset(t2, s) ==> Set_subset(Set_union(t1, t2), s));
-
-// relation between union and elem
-axiom (forall n: Invoc, s, t: SetInvoc ::
-    {Set_elem(n, Set_union(s, t)), Set_elem(n, t)}
-    {Set_elem(n, Set_union(s, t)), Set_elem(n, s)}
-  Set_elem(n, Set_union(s, t)) <==> Set_elem(n, s) || Set_elem(n, t));
-
-// intersection
-function Set_inter(s1: SetInvoc, s2: SetInvoc) returns (t: SetInvoc);
-
-// relation between intersection and elem
-axiom (forall n: Invoc, s, t: SetInvoc ::
-    {Set_elem(n, Set_inter(s, t)), Set_elem(n, t)}
-    {Set_elem(n, Set_inter(s, t)), Set_elem(n, s)}
-  Set_elem(n, Set_inter(s, t)) <==> Set_elem(n, s) && Set_elem(n, t));
-
-// intersection with empty
-axiom (forall s: SetInvoc :: Set_inter(s, Set_empty) == Set_empty);
-axiom (forall s: SetInvoc :: Set_inter(Set_empty, s) == Set_empty);
+// -- New functions and axioms:
 
 function Set_ofSeq(q: SeqInvoc) returns (s: SetInvoc);
-
-function Set_add(s: SetInvoc, n: Invoc) returns (t: SetInvoc);
-
-// add in terms of union and singleton
-axiom (forall s: SetInvoc, n: Invoc :: {Set_union(s, Set(n))} Set_add(s, n) == Set_union(s, Set(n)));
-
-// Relation between add and elem
-axiom (forall s: SetInvoc, n1, n2: Invoc :: {Set_elem(n1, Set_add(s, n2))}
-  Set_elem(n1, Set_add(s, n2)) <==> n1 == n2 || Set_elem(n1, s));
-axiom (forall s: SetInvoc, n: Invoc :: {Set_elem(n, s), Set_add(s, n)}
-  Set_elem(n, s) ==> Set_add(s, n) == s);
-
-// What happens when you add to empty
-axiom (forall n: Invoc :: {Set_add(Set_empty, n)} Set_add(Set_empty, n) == Set(n));
-
-// Relation between union and elem
-// axiom (forall s, t: SetInvoc, n1: Invoc :: Set_elem(n1, Set_union(s, t))
-//        ==> Set_elem(n1, s) || Set_elem(n1, t));
-
-// add preserves subset relation
-// axiom (forall s, t: SetInvoc, n: Invoc :: Set_subset(s, t) ==> Set_subset(Set_add(s, n), Set_add(t, n)));
-axiom (forall s, t: SetInvoc, n: Invoc :: {Set_subset(s, Set_add(t, n))}
-  Set_subset(s, t) ==> Set_subset(s, Set_add(t, n)));
 
 // Relation between Set_ofSeq, add, and append
 axiom (forall q: SeqInvoc, n: Invoc :: {Set_ofSeq(Seq_append(q, n))}
   Set_ofSeq(Seq_append(q, n)) == Set_add(Set_ofSeq(q), n));
 
 // Relation between Set_ofSeq, Set_elem, and Seq_elem
-axiom (forall q: SeqInvoc, n: Invoc :: {Set_elem(n, Set_ofSeq(q))}
-  Seq_elem(n, q) <==> Set_elem(n, Set_ofSeq(q)));
-
+axiom (forall q: SeqInvoc, n: Invoc :: {Set_ofSeq(q)[n]}
+  Seq_elem(n, q) <==> Set_ofSeq(q)[n]);
 
 // Distinct sequences
 function Seq_distinct(q: SeqInvoc) : bool;
@@ -161,12 +147,12 @@ axiom (forall q: SeqInvoc, s: SetInvoc, n: Invoc :: {Seq_restr(Seq_append(q, n),
   ==> Seq_restr(Seq_append(q, n), s) == Seq_restr(q, s));
 axiom (forall q: SeqInvoc, s: SetInvoc, n: Invoc ::
     {Seq_restr(Seq_append(q, n), Set_add(s, n))}
-  Seq_distinct(Seq_append(q, n)) && !Set_elem(n, s)
+  Seq_distinct(Seq_append(q, n)) && !s[n]
   ==> Seq_restr(Seq_append(q, n), Set_add(s, n)) == Seq_append(Seq_restr(q, s), n));
 
 // Relation between Seq_elem and Seq_restr
 axiom (forall q: SeqInvoc, s: SetInvoc, n: Invoc :: {Seq_elem(n, Seq_restr(q, s))}
-  Seq_elem(n, Seq_restr(q, s)) <==> Seq_elem(n, q) && Set_elem(n, s));
+  Seq_elem(n, Seq_restr(q, s)) <==> Seq_elem(n, q) && s[n]);
 
 
 // Implicit (strict) order of a sequence
@@ -180,7 +166,7 @@ function Seq_ord(q: SeqInvoc, n1, n2: Invoc) : bool;
 axiom (forall q: SeqInvoc, s: SetInvoc, n: Invoc ::
     {Seq_append(Seq_restr(q, s), n)}
   (forall n1: Invoc :: Seq_elem(n1, Seq_restr(q, s)) ==> Seq_ord(q, n1, n))
-  && Seq_elem(n, q) && !Set_elem(n, s)
+  && Seq_elem(n, q) && !s[n]
   ==> Seq_restr(q, Set_add(s, n)) == Seq_append(Seq_restr(q, s), n));
 
 // Appending extends order
@@ -189,6 +175,7 @@ axiom (forall q: SeqInvoc, n, n1, n2: Invoc :: {Seq_ord(Seq_append(q, n), n1, n2
   (Seq_ord(Seq_append(q, n), n1, n2)
     <==> (Seq_elem(n1, q) && Seq_elem(n2, q) && Seq_ord(q, n1, n2))
       || (Seq_elem(n1, q) && n2 == n)));
+
 
 /** Executions and Invocations */
 
@@ -309,13 +296,13 @@ axiom (forall s0, s1, t: SetInvoc, k: int ::
 
 // Map.restr to k doesn't change if we take union with stuff != k
 axiom (forall s, t: SetInvoc, k: int :: {Map.restr(Set_union(s, t), k)}
-  (forall n: Invoc :: Set_elem(n, t) ==> invoc_m(n) != Map.put || invoc_k(n) != k)
+  (forall n: Invoc :: t[n] ==> invoc_m(n) != Map.put || invoc_k(n) != k)
   ==> Map.restr(Set_union(s, t), k) == Map.restr(s, k));
 
 // Union of disjoint keys means state comes from one of the two sets
 procedure {:layer 1} lemma_state_Set_union(k: int, s, t: SetInvoc);
-  requires (forall n: Invoc :: Set_elem(n, s) ==> invoc_k(n) < k);
-  requires (forall n: Invoc :: Set_elem(n, t) ==> k <= invoc_k(n));
+  requires (forall n: Invoc :: s[n] ==> invoc_k(n) < k);
+  requires (forall n: Invoc :: t[n] ==> k <= invoc_k(n));
   ensures (forall i: int :: 0 <= i && i < k ==>
     Map.ofSeq(Seq_restr(lin, Set_union(s, t)))[i] == Map.ofSeq(Seq_restr(lin, s))[i]);
   ensures (forall i: int :: k <= i && i < tabLen ==>
@@ -441,7 +428,7 @@ function {:inline} tableInv(table: [int]int, abs: Map.State, tabvis: [int]SetInv
   && (forall i: int :: 0 <= i && i < tabLen
     ==> Set_subset(tabvis[i], Set_ofSeq(lin)))
   // tabvis[i] only has puts to key k
-  && (forall i: int, n: Invoc :: 0 <= i && i < tabLen && Set_elem(n, tabvis[i])
+  && (forall i: int, n: Invoc :: 0 <= i && i < tabLen && tabvis[i][n]
     ==> invoc_m(n) == Map.put && invoc_k(n) == i)
 
   // lin only contains called things
@@ -449,8 +436,8 @@ function {:inline} tableInv(table: [int]int, abs: Map.State, tabvis: [int]SetInv
   // lin contains distinct elements
   && Seq_distinct(lin)
   // vis sets only contain linearized ops
-  && (forall n1, n2: Invoc :: {Set_elem(n1, vis[n2])}
-    Set_elem(n1, vis[n2]) && returned[n2] ==> Set_elem(n1, Set_ofSeq(lin)))
+  && (forall n1, n2: Invoc :: {vis[n2][n1]}
+    vis[n2][n1] && returned[n2] ==> Set_ofSeq(lin)[n1])
   // Used to infer that invocations don't modify vis after they've returned
   && (forall n1, n2 : Invoc :: called[n1] && hb(n2, n1) ==> returned[n2])
   // To establish precondition of intro_writeLin
@@ -556,8 +543,8 @@ procedure {:yields} {:layer 1} {:refines "put_spec"} put(k, v: int, {:linear "th
   requires {:layer 1} 0 <= k && k < tabLen;
   ensures {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen, called, returned);
   ensures {:layer 1} postLP(called, returned, lin, this);
-  ensures {:layer 1} (forall n1: Invoc :: {Set_elem(n1, vis[this])}
-    Set_elem(n1, vis[this]) ==> Set_elem(n1, Set_ofSeq(lin)));
+  ensures {:layer 1} (forall n1: Invoc :: {vis[this][n1]}
+    vis[this][n1] ==> Set_ofSeq(lin)[n1]);
 {
   var {:layer 1} my_vis: SetInvoc;
   yield; assert {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen, called, returned) && preLP(called, returned, lin, this);
@@ -572,24 +559,24 @@ procedure {:yields} {:layer 1} {:refines "put_spec"} put(k, v: int, {:linear "th
 
   yield; assert {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen, called, returned)
     && postLP(called, returned, lin, this);
-  assert {:layer 1} (forall n1: Invoc :: {Set_elem(n1, vis[this])}
-    Set_elem(n1, vis[this]) ==> Set_elem(n1, Set_ofSeq(lin)));
+  assert {:layer 1} (forall n1: Invoc :: {vis[this][n1]}
+    vis[this][n1] ==> Set_ofSeq(lin)[n1]);
 }
 
 procedure {:yields} {:layer 1} {:refines "put_return_atomic"}
     put_return({:linear "this"} this: Invoc)
   requires {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen, called, returned);
   requires {:layer 1} postLP(called, returned, lin, this);
-  requires {:layer 1} (forall n1: Invoc :: {Set_elem(n1, vis[this])}
-    Set_elem(n1, vis[this]) ==> Set_elem(n1, Set_ofSeq(lin)));
+  requires {:layer 1} (forall n1: Invoc :: {vis[this][n1]}
+    vis[this][n1] ==> Set_ofSeq(lin)[n1]);
   ensures {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen, called, returned);
   modifies returned;
 {
   yield;
   assert {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen, called, returned);
   assert {:layer 1} postLP(called, returned, lin, this);
-  assert {:layer 1} (forall n1: Invoc :: {Set_elem(n1, vis[this])}
-    Set_elem(n1, vis[this]) ==> Set_elem(n1, Set_ofSeq(lin)));
+  assert {:layer 1} (forall n1: Invoc :: {vis[this][n1]}
+    vis[this][n1] ==> Set_ofSeq(lin)[n1]);
 
   call intro_writeReturned(this);
 
@@ -628,8 +615,8 @@ procedure {:yields} {:layer 1} {:refines "get_spec"} get(k: int, {:linear "this"
   requires {:layer 1} 0 <= k && k < tabLen;
   ensures {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen, called, returned);
   ensures {:layer 1} postLP(called, returned, lin, this);
-  ensures {:layer 1} (forall n1: Invoc :: {Set_elem(n1, vis[this])}
-    Set_elem(n1, vis[this]) ==> Set_elem(n1, Set_ofSeq(lin)));
+  ensures {:layer 1} (forall n1: Invoc :: {vis[this][n1]}
+    vis[this][n1] ==> Set_ofSeq(lin)[n1]);
 {
   var {:layer 1} my_vis: SetInvoc;
   yield; assert {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen, called, returned) && preLP(called, returned, lin, this);
@@ -642,24 +629,24 @@ procedure {:yields} {:layer 1} {:refines "get_spec"} get(k: int, {:linear "this"
 
   yield; assert {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen, called, returned)
     && postLP(called, returned, lin, this);
-  assert {:layer 1} (forall n1: Invoc :: {Set_elem(n1, vis[this])}
-    Set_elem(n1, vis[this]) ==> Set_elem(n1, Set_ofSeq(lin)));
+  assert {:layer 1} (forall n1: Invoc :: {vis[this][n1]}
+    vis[this][n1] ==> Set_ofSeq(lin)[n1]);
 }
 
 procedure {:yields} {:layer 1} {:refines "get_return_atomic"}
     get_return({:linear "this"} this: Invoc)
   requires {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen, called, returned);
   requires {:layer 1} postLP(called, returned, lin, this);
-  requires {:layer 1} (forall n1: Invoc :: {Set_elem(n1, vis[this])}
-    Set_elem(n1, vis[this]) ==> Set_elem(n1, Set_ofSeq(lin)));
+  requires {:layer 1} (forall n1: Invoc :: {vis[this][n1]}
+    vis[this][n1] ==> Set_ofSeq(lin)[n1]);
   ensures {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen, called, returned);
   modifies returned;
 {
   yield;
   assert {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen, called, returned);
   assert {:layer 1} postLP(called, returned, lin, this);
-  assert {:layer 1} (forall n1: Invoc :: {Set_elem(n1, vis[this])}
-    Set_elem(n1, vis[this]) ==> Set_elem(n1, Set_ofSeq(lin)));
+  assert {:layer 1} (forall n1: Invoc :: {vis[this][n1]}
+    vis[this][n1] ==> Set_ofSeq(lin)[n1]);
 
   call intro_writeReturned(this);
 
@@ -698,8 +685,8 @@ procedure {:yields} {:layer 1} {:refines "contains_spec"}
   requires {:layer 1} invoc_m(this) == Map.contains && invoc_v(this) == v;
   ensures {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen, called, returned);
   ensures {:layer 1} postLP(called, returned, lin, this);
-  ensures {:layer 1} (forall n1: Invoc :: {Set_elem(n1, vis[this])}
-    Set_elem(n1, vis[this]) ==> Set_elem(n1, Set_ofSeq(lin)));
+  ensures {:layer 1} (forall n1: Invoc :: {vis[this][n1]}
+    vis[this][n1] ==> Set_ofSeq(lin)[n1]);
 {
   var k, tv: int;
   var {:layer 1} my_vis, my_vis1: SetInvoc;
@@ -711,8 +698,8 @@ procedure {:yields} {:layer 1} {:refines "contains_spec"}
   yield;
   assert {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen, called, returned) && preLP(called, returned, lin, this);
   assert {:layer 1} (forall j: Invoc :: hb(j, this) ==> Set_subset(vis[j], my_vis));
-  assert {:layer 1} (forall n1: Invoc :: {Set_elem(n1, my_vis)}
-    Set_elem(n1, my_vis) ==> Set_elem(n1, Set_ofSeq(lin)));
+  assert {:layer 1} (forall n1: Invoc :: {my_vis[n1]}
+    my_vis[n1] ==> Set_ofSeq(lin)[n1]);
   assert {:layer 1} (forall i: int :: 0 <= i && i < tabLen
     ==> Set_subset(Map.restr(my_vis, i), tabvis[i]));
 
@@ -722,8 +709,8 @@ procedure {:yields} {:layer 1} {:refines "contains_spec"}
     invariant {:layer 1} (forall i: int :: 0 <= i && i < k
       ==> Map.ofSeq(Seq_restr(lin, my_vis))[i] != v);
     invariant {:layer 1} (forall j: Invoc :: hb(j, this) ==> Set_subset(vis[j], my_vis));
-    invariant {:layer 1} (forall n1: Invoc :: {Set_elem(n1, my_vis)}
-      Set_elem(n1, my_vis) ==> Set_elem(n1, Set_ofSeq(lin)));
+    invariant {:layer 1} (forall n1: Invoc :: {my_vis[n1]}
+      my_vis[n1] ==> Set_ofSeq(lin)[n1]);
     invariant {:layer 1} (forall i: int :: 0 <= i && i < tabLen
       ==> Set_subset(Map.restr(my_vis, i), tabvis[i]));
   {
@@ -750,8 +737,8 @@ procedure {:yields} {:layer 1} {:refines "contains_spec"}
 
       yield; assert {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen, called, returned)
         && postLP(called, returned, lin, this);
-      assert {:layer 1} (forall n1: Invoc :: {Set_elem(n1, vis[this])}
-        Set_elem(n1, vis[this]) ==> Set_elem(n1, Set_ofSeq(lin)));
+      assert {:layer 1} (forall n1: Invoc :: {vis[this][n1]}
+        vis[this][n1] ==> Set_ofSeq(lin)[n1]);
       return;
     }
     k := k + 1;
@@ -760,8 +747,8 @@ procedure {:yields} {:layer 1} {:refines "contains_spec"}
     assert {:layer 1} (forall i: int :: 0 <= i && i < k
       ==> Map.ofSeq(Seq_restr(lin, my_vis))[i] != v);
     assert {:layer 1} (forall j: Invoc :: hb(j, this) ==> Set_subset(vis[j], my_vis));
-    assert {:layer 1} (forall n1: Invoc :: {Set_elem(n1, my_vis)}
-      Set_elem(n1, my_vis) ==> Set_elem(n1, Set_ofSeq(lin)));
+    assert {:layer 1} (forall n1: Invoc :: {my_vis[n1]}
+      my_vis[n1] ==> Set_ofSeq(lin)[n1]);
     assert {:layer 1} (forall i: int :: 0 <= i && i < tabLen
       ==> Set_subset(Map.restr(my_vis, i), tabvis[i]));
   }
@@ -770,8 +757,8 @@ procedure {:yields} {:layer 1} {:refines "contains_spec"}
   assert {:layer 1} (forall i: int :: 0 <= i && i < tabLen
     ==> Map.ofSeq(Seq_restr(lin, my_vis))[i] != v);
   assert {:layer 1} (forall j: Invoc :: hb(j, this) ==> Set_subset(vis[j], my_vis));
-  assert {:layer 1} (forall n1: Invoc :: {Set_elem(n1, my_vis)}
-    Set_elem(n1, my_vis) ==> Set_elem(n1, Set_ofSeq(lin)));
+  assert {:layer 1} (forall n1: Invoc :: {my_vis[n1]}
+    my_vis[n1] ==> Set_ofSeq(lin)[n1]);
 
   // Linearization point
   call intro_writeVis(this, my_vis);
@@ -782,24 +769,24 @@ procedure {:yields} {:layer 1} {:refines "contains_spec"}
 
   yield; assert {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen, called, returned)
     && postLP(called, returned, lin, this);
-  assert {:layer 1} (forall n1: Invoc :: {Set_elem(n1, vis[this])}
-    Set_elem(n1, vis[this]) ==> Set_elem(n1, Set_ofSeq(lin)));
+  assert {:layer 1} (forall n1: Invoc :: {vis[this][n1]}
+    vis[this][n1] ==> Set_ofSeq(lin)[n1]);
 }
 
 procedure {:yields} {:layer 1} {:refines "contains_return_atomic"}
     contains_return({:linear "this"} this: Invoc)
   requires {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen, called, returned);
   requires {:layer 1} postLP(called, returned, lin, this);
-  requires {:layer 1} (forall n1: Invoc :: {Set_elem(n1, vis[this])}
-    Set_elem(n1, vis[this]) ==> Set_elem(n1, Set_ofSeq(lin)));
+  requires {:layer 1} (forall n1: Invoc :: {vis[this][n1]}
+    vis[this][n1] ==> Set_ofSeq(lin)[n1]);
   ensures {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen, called, returned);
   modifies returned;
 {
   yield;
   assert {:layer 1} tableInv(table, abs, tabvis, lin, vis, tabLen, called, returned);
   assert {:layer 1} postLP(called, returned, lin, this);
-  assert {:layer 1} (forall n1: Invoc :: {Set_elem(n1, vis[this])}
-    Set_elem(n1, vis[this]) ==> Set_elem(n1, Set_ofSeq(lin)));
+  assert {:layer 1} (forall n1: Invoc :: {vis[this][n1]}
+    vis[this][n1] ==> Set_ofSeq(lin)[n1]);
 
   call intro_writeReturned(this);
 
