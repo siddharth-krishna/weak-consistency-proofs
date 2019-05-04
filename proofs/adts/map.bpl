@@ -80,7 +80,11 @@ procedure {:layer 1} lemma_state_Set_union(k: int, s, t: SetInvoc);
 
 // ---------- Atomic specification program:
 
-// procedure {:atomic} {:layer 2} hb_action(n1: Invoc, n2: Invoc)
+procedure {:atomic} {:layer 2} hb_action_atomic(n1: Invoc, n2: Invoc)
+  modifies hb;
+{
+  hb[n1] := hb[n1][n2 := true];
+}
 
 procedure {:atomic} {:layer 2} put_call_atomic({:linear "this"} this: Invoc) {}
 
@@ -93,7 +97,7 @@ procedure {:atomic} {:layer 2} put_spec(k: int, v: int, {:linear "this"} this: I
   assume true;
   abs[k] := v;
 
-  assume Consistency.absolute(lin, vis, this, my_vis);
+  assume Consistency.absolute(hb, lin, vis, this, my_vis);
 
   lin := Seq_append(lin, this);
   vis[this] := my_vis;
@@ -111,7 +115,7 @@ procedure {:atomic} {:layer 2} get_spec(k: int, {:linear "this"} this: Invoc) re
   // Get satisfies its functional spec
   v := abs[k];
 
-  assume Consistency.absolute(lin, vis, this, my_vis);
+  assume Consistency.absolute(hb, lin, vis, this, my_vis);
 
   lin := Seq_append(lin, this);
   vis[this] := my_vis;
@@ -138,7 +142,7 @@ procedure {:atomic} {:layer 2} contains_spec(v: int, {:linear "this"} this: Invo
   // Contains satisfies its functional spec
   assume contains_func_spec(my_vis, lin, witness_k, v, res);
 
-  assume Consistency.monotonic(lin, vis, this, my_vis);
+  assume Consistency.monotonic(hb, lin, vis, this, my_vis);
 
   lin := Seq_append(lin, this);
   vis[this] := my_vis;

@@ -59,7 +59,11 @@ axiom (forall s: SeqInvoc, n: Invoc :: {Queue.ofSeq(Seq_append(s, n))}
 
 // ---------- Atomic specification program:
 
-// procedure {:atomic} {:layer 2} hb_action(n1: Invoc, n2: Invoc)
+procedure {:atomic} {:layer 2} hb_action_atomic(n1: Invoc, n2: Invoc)
+  modifies hb;
+{
+  hb[n1] := hb[n1][n2 := true];
+}
 
 procedure {:atomic} {:layer 2} push_call_atomic({:linear "this"} this: Invoc) {}
 
@@ -72,7 +76,7 @@ procedure {:atomic} {:layer 2} push_atomic(k: Key, x: Ref,
   // Satisfies its functional spec
   assume true;
 
-  assume Consistency.absolute(lin, vis, this, my_vis);
+  assume Consistency.absolute(hb, lin, vis, this, my_vis);
 
   lin := Seq_append(lin, this);
   vis[this] := my_vis;
@@ -90,7 +94,7 @@ procedure {:atomic} {:layer 2} pop_atomic({:linear "this"} this: Invoc) returns 
   // Satisfies its functional spec
   assume k == Queue.stateArray(Queue.ofSeq(lin))[Queue.stateHead(Queue.ofSeq(lin))];
 
-  assume Consistency.absolute(lin, vis, this, my_vis);
+  assume Consistency.absolute(hb, lin, vis, this, my_vis);
 
   lin := Seq_append(lin, this);
   vis[this] := my_vis;
@@ -109,7 +113,7 @@ procedure {:atomic} {:layer 2} size_atomic({:linear "this"} this: Invoc) returns
   assume s == Queue.stateTail(Queue.ofSeq(Seq_restr(lin, my_vis)))
     - Queue.stateHead(Queue.ofSeq(Seq_restr(lin, my_vis)));
 
-  assume Consistency.monotonic(lin, vis, this, my_vis);
+  assume Consistency.monotonic(hb, lin, vis, this, my_vis);
 
   lin := Seq_append(lin, this);
   vis[this] := my_vis;

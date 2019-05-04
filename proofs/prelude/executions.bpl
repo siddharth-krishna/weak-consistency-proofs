@@ -19,10 +19,8 @@ function {:inline} {:linear "this"} TidCollector(x: Invoc) : [Invoc]bool
 
 // ---------- Representation of execution and linearization
 
-// hb(x, y) : x happens-before y.
-// We assume there exists such a function, given by the client program
-function hb(x: Invoc, y: Invoc) : bool;
-axiom (forall n: Invoc :: !hb(n, n));
+// hb[x][y] : x happens-before y.
+var {:layer 1,2} hb: [Invoc][Invoc]bool;
 
 // A shared global variable that builds the linearization
 var {:layer 1,2} lin: SeqInvoc;
@@ -51,22 +49,28 @@ procedure {:layer 1} intro_writeVis(n: Invoc, s: SetInvoc)
 procedure {:layer 1} {:inline 1} intro_writeLin(n: Invoc)
   requires {:layer 1} !Seq_elem(n, lin);
   // To show that linearization is consistent with happens-before
-  requires {:layer 1} (forall n1 : Invoc :: hb(n1, n) ==> Seq_elem(n1, lin));
+  requires {:layer 1} (forall n1 : Invoc :: hb[n1][n] ==> Seq_elem(n1, lin));
   ensures {:layer 1} Seq_elem(n, lin);
   modifies lin;
 {
   lin := Seq_append(lin, n);
 }
 
+procedure {:layer 1} {:inline 1} intro_writeHb(n1: Invoc, n2: Invoc)
+  modifies hb;
+{
+  hb[n1] := hb[n1][n2 := true];
+}
+
 
 // ---------- Consistency levels
 
-function {:inline} Consistency.absolute(lin: SeqInvoc, vis: [Invoc]SetInvoc,
-    n: Invoc, n_vis: SetInvoc): bool {
+function {:inline} Consistency.absolute(hb: [Invoc]SetInvoc, lin: SeqInvoc,
+    vis: [Invoc]SetInvoc, n: Invoc, n_vis: SetInvoc): bool {
   n_vis == Set_ofSeq(lin)
 }
 
-function {:inline} Consistency.monotonic(lin: SeqInvoc, vis: [Invoc]SetInvoc,
-    n: Invoc, n_vis: SetInvoc): bool {
-  (forall i: Invoc :: hb(i, n) ==> Set_subset(vis[i], n_vis))
+function {:inline} Consistency.monotonic(hb: [Invoc]SetInvoc, lin: SeqInvoc,
+    vis: [Invoc]SetInvoc, n: Invoc, n_vis: SetInvoc): bool {
+  (forall i: Invoc :: hb[i][n] ==> Set_subset(vis[i], n_vis))
 }
