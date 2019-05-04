@@ -69,7 +69,7 @@ procedure {:atomic} {:layer 2} push_atomic(k: Key, x: Ref,
 {
   var my_vis: SetInvoc;
 
-  // Satisfies its functional spec  // TODO instead, add to Inv that abs execution satisfies S
+  // Satisfies its functional spec
   assume true;
 
   assume Consistency.absolute(lin, vis, this, my_vis);

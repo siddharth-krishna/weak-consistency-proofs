@@ -19,7 +19,7 @@ function {:inline} {:linear "this"} TidCollector(x: Invoc) : [Invoc]bool
 
 // ---------- Representation of execution and linearization
 
-// hb(x, y) : x happens-before y.  // TODO make var, have actions to add these
+// hb(x, y) : x happens-before y.
 // We assume there exists such a function, given by the client program
 function hb(x: Invoc, y: Invoc) : bool;
 axiom (forall n: Invoc :: !hb(n, n));

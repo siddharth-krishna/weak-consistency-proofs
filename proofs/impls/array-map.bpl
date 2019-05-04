@@ -21,7 +21,7 @@ axiom 0 < tabLen;
 var {:layer 1,1} tabvis: [int]SetInvoc;
 
 
-// Abstract state of ADT  // TODO layer 1,1
+// Abstract state of ADT
 var {:layer 1,2} abs: Map.State;
 
 // The set of invocations that have been called

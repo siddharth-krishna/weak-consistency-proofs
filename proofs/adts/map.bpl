@@ -89,7 +89,7 @@ procedure {:atomic} {:layer 2} put_spec(k: int, v: int, {:linear "this"} this: I
 {
   var my_vis: SetInvoc;
 
-  // Satisfies its functional spec  // TODO instead, add to Inv that abs execution satisfies S
+  // Satisfies its functional spec
   assume true;
   abs[k] := v;
 

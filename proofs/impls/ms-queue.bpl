@@ -19,7 +19,7 @@ type Key;
 var {:layer 0, 1} next: [Ref]Ref;
 var {:layer 0, 1} data: [Ref]Key;
 
-var {:linear "FP"} {:layer 0, 1} queueFP: [Ref]bool;  // TODO make layer 1,1 and intro actions to modify?
+var {:linear "FP"} {:layer 0, 1} queueFP: [Ref]bool;
 var {:linear "FP"} {:layer 0, 1} usedFP: [Ref]bool;
 
 var {:layer 0, 1} head: Ref;
@@ -64,7 +64,7 @@ function {:inline} Inv(queueFP: [Ref]bool, usedFP: [Ref]bool, start: Ref,
     known(x) ==> (queueFP[x] <==> (Btwn(next, head, x, null) && x != null)))
   // Tail is on that list
   && Btwn(next, head, tail, null) && tail != null
-  // There is also a list from start to head // TODO try just lseg(c, head)
+  // There is also a list from start to head
   && Btwn(next, start, start, head)
   && (forall x: Ref :: {usedFP[x]}{Btwn(next, start, x, head)}
     known(x) ==> (usedFP[x] <==> (Btwn(next, start, x, head) && x != head)))
@@ -86,7 +86,7 @@ function {:inline} Inv(queueFP: [Ref]bool, usedFP: [Ref]bool, start: Ref,
     (Btwn(next, head, y, null) && y != null && next[y] == null
     ==> y == absRefs[Queue.stateTail(Queue.ofSeq(lin)) - 1]))
   // nextTags only contains singleton sets of push operations
-  && (forall y: Ref :: {known(y)} known(y) ==>  // TODO trigger?
+  && (forall y: Ref :: {known(y)} known(y) ==>
     (Btwn(next, start, y, null) && y != null && next[y] != null
     ==> nextTags[y] == Set(nextInvoc[y]) && invoc_m(nextInvoc[y]) == Queue.push))
   && nextTags[absRefs[Queue.stateTail(Queue.ofSeq(lin)) - 1]] == Set_empty()
@@ -436,8 +436,8 @@ procedure {:yields} {:layer 1} {:refines "push_call_atomic"}
 
 procedure {:yields} {:layer 1} {:refines "push_atomic"} push(k: Key, x: Ref,
     {:linear_in "FP"} xFP: [Ref]bool, {:linear "this"} this: Invoc)
-  requires {:layer 1} xFP[x] && next[x] == null && data[x] == k && nextTags[x] == Set_empty();  // TODO alloc x with k
-  requires {:layer 1} !Btwn(next, head, x, null);  // TODO get from linearity
+  requires {:layer 1} xFP[x] && next[x] == null && data[x] == k && nextTags[x] == Set_empty();
+  requires {:layer 1} !Btwn(next, head, x, null);
   requires {:layer 1} Inv(queueFP, usedFP, start, head, tail, next, data, nextTags, nextInvoc, nextRef, lin, vis, absRefs, called, returned) && preLP(called, returned, lin, this);
   requires {:layer 1} invoc_m(this) == Queue.push && invoc_k(this) == k;
   ensures {:layer 1} Inv(queueFP, usedFP, start, head, tail, next, data, nextTags, nextInvoc, nextRef, lin, vis, absRefs, called, returned) && postLP(called, returned, lin, this);
