@@ -47,4 +47,21 @@ $ make
         Has `push`, `pop`, and `size`, and proves memory safety.
         Needs invariant tying abstract state to concrete state to prove monotonicity.
 
+## Encoding
+
+We encode the atomic transition system of each ADT specification in CIVL as layer 2 programs in `proofs/adts/`.
+These programs contain a call, a return, and a "body" procedure for each method.
+The call and return procedures correspond to the call and return AETS actions respectively.
+The "body" procedure (for example `get_atomic` of `map.bpl`) corresponds to the atomic block of vis and lin AETS actions.
+We also have a `hb_action_atomic` procedure that corresponds to a hb action between two arbitrary invocations.
+
+The state of these layer 2 programs (defined in `proofs/prelude/executions.bpl`) is the abstract execution of the AETS trace, encoded using the following variables:
+- `hb`, `lin`, `vis`: these correspond to the respective componenets of the abstract execution.
+- Instead of having an `inv` variable, we encode the method name and argument values implicitly using the functions `invoc_m` etc of each `Invoc` element of `lin`.
+- We encode the return values of each invocation in the `ret` variable. As our implementations determine the return values at the linearization points, this variable is written to in the "body" procedure for simplicity.
+
+We maintain the invariant that the abstract execution is consistent with the sequential specification by checking that the return value stored in the "body" procedure is consistent with the abstract state as determined by the linearization so far.
+For example, `get_atomic` checks that the returned value `v` is equal to `abs[k]` where `abs` is the abstract key-value map determined by `lin`.
+
+
 [Boogie]: https://github.com/boogie-org/boogie
