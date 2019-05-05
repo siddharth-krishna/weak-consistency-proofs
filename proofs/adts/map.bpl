@@ -88,7 +88,7 @@ procedure {:atomic} {:layer 2} hb_action_atomic(n1: Invoc, n2: Invoc)
 
 procedure {:atomic} {:layer 2} put_call_atomic({:linear "this"} this: Invoc) {}
 
-procedure {:atomic} {:layer 2} put_spec(k: int, v: int, {:linear "this"} this: Invoc)
+procedure {:atomic} {:layer 2} put_atomic(k: int, v: int, {:linear "this"} this: Invoc)
   modifies abs, lin, vis;
 {
   var my_vis: SetInvoc;
@@ -107,8 +107,8 @@ procedure {:atomic} {:layer 2} put_return_atomic({:linear "this"} this: Invoc) {
 
 procedure {:atomic} {:layer 2} get_call_atomic({:linear "this"} this: Invoc) {}
 
-procedure {:atomic} {:layer 2} get_spec(k: int, {:linear "this"} this: Invoc) returns (v: int)
-  modifies lin, vis;
+procedure {:atomic} {:layer 2} get_atomic(k: int, {:linear "this"} this: Invoc) returns (v: int)
+  modifies lin, vis, ret;
 {
   var my_vis: SetInvoc;
 
@@ -119,6 +119,8 @@ procedure {:atomic} {:layer 2} get_spec(k: int, {:linear "this"} this: Invoc) re
 
   lin := Seq_append(lin, this);
   vis[this] := my_vis;
+
+  ret[this] := RetVal_ofInt(v);
 }
 
 procedure {:atomic} {:layer 2} get_return_atomic({:linear "this"} this: Invoc) {}
@@ -133,9 +135,9 @@ function contains_func_spec(vis: SetInvoc, lin: SeqInvoc, witness_k: int,
     ==> Map.ofSeq(Seq_restr(lin, vis))[i] != v))
 }
 
-procedure {:atomic} {:layer 2} contains_spec(v: int, {:linear "this"} this: Invoc)
+procedure {:atomic} {:layer 2} contains_atomic(v: int, {:linear "this"} this: Invoc)
   returns (res: bool, witness_k: int)
-  modifies lin, vis;
+  modifies lin, vis, ret;
 {
   var my_vis: SetInvoc;
 
@@ -146,6 +148,8 @@ procedure {:atomic} {:layer 2} contains_spec(v: int, {:linear "this"} this: Invo
 
   lin := Seq_append(lin, this);
   vis[this] := my_vis;
+
+  ret[this] := RetVal_ofBool(res);
 }
 
 procedure {:atomic} {:layer 2} contains_return_atomic({:linear "this"} this: Invoc) {}

@@ -28,10 +28,15 @@ var {:layer 1,2} lin: SeqInvoc;
 // A map from invocations to the set of prior invocations visible to them
 var {:layer 1,2} vis: [Invoc]SetInvoc;
 
-// The map from invocations to method and argument values is encoded in the Invoc type
-// so as to not further complicate the Queue ADT axioms above
-// The map from invocations to return values is implicitly stored in the ghost vars
-// retK & retS. Since return values are determined at the LPs, we store them at LP time.
+// The map from invocations to method and argument values is encoded in the Invoc
+// type so as to not further complicate the ADT axioms.
+
+// The map from invocations to return values
+// Since return values are determined at the LPs, we store them at LP time.
+type RetVal;
+function RetVal_ofInt(int) : RetVal;
+function RetVal_ofBool(bool) : RetVal;
+var {:layer 1,2} ret: [Invoc]RetVal;
 
 procedure {:layer 1} intro_readLin() returns (s: SetInvoc)
   ensures {:layer 1} s == Set_ofSeq(lin);
@@ -60,6 +65,12 @@ procedure {:layer 1} {:inline 1} intro_writeHb(n1: Invoc, n2: Invoc)
   modifies hb;
 {
   hb[n1] := hb[n1][n2 := true];
+}
+
+procedure {:layer 1} {:inline 1} intro_writeRet(n: Invoc, v: RetVal)
+  modifies ret;
+{
+  ret[n] := v;
 }
 
 

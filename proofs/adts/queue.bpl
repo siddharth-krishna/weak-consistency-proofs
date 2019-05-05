@@ -87,7 +87,7 @@ procedure {:atomic} {:layer 2} push_return_atomic({:linear "this"} this: Invoc) 
 procedure {:atomic} {:layer 2} pop_call_atomic({:linear "this"} this: Invoc) {}
 
 procedure {:atomic} {:layer 2} pop_atomic({:linear "this"} this: Invoc) returns (k: Key)
-  modifies lin, vis;
+  modifies lin, vis, ret;
 {
   var my_vis: SetInvoc;
 
@@ -98,6 +98,8 @@ procedure {:atomic} {:layer 2} pop_atomic({:linear "this"} this: Invoc) returns 
 
   lin := Seq_append(lin, this);
   vis[this] := my_vis;
+
+  ret[this] := RetVal_ofKey(k);
 }
 
 procedure {:atomic} {:layer 2} pop_return_atomic({:linear "this"} this: Invoc) {}
@@ -105,7 +107,7 @@ procedure {:atomic} {:layer 2} pop_return_atomic({:linear "this"} this: Invoc) {
 procedure {:atomic} {:layer 2} size_call_atomic({:linear "this"} this: Invoc) {}
 
 procedure {:atomic} {:layer 2} size_atomic({:linear "this"} this: Invoc) returns (s: int)
-  modifies lin, vis;
+  modifies lin, vis, ret;
 {
   var my_vis: SetInvoc;
 
@@ -117,6 +119,8 @@ procedure {:atomic} {:layer 2} size_atomic({:linear "this"} this: Invoc) returns
 
   lin := Seq_append(lin, this);
   vis[this] := my_vis;
+
+  ret[this] := RetVal_ofInt(s);
 }
 
 procedure {:atomic} {:layer 2} size_return_atomic({:linear "this"} this: Invoc) {}

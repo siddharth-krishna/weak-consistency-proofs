@@ -302,10 +302,15 @@ var {:layer 1,2} lin: SeqInvoc;
 // A map from invocations to the set of prior invocations visible to them
 var {:layer 1,2} vis: [Invoc]SetInvoc;
 
-// The map from invocations to method and argument values is encoded in the Invoc type
-// so as to not further complicate the Queue ADT axioms above
-// The map from invocations to return values is implicitly stored in the ghost vars
-// retK & retS. Since return values are determined at the LPs, we store them at LP time.
+// The map from invocations to method and argument values is encoded in the Invoc
+// type so as to not further complicate the ADT axioms.
+
+// The map from invocations to return values
+// Since return values are determined at the LPs, we store them at LP time.
+type RetVal;
+function RetVal_ofInt(int) : RetVal;
+function RetVal_ofBool(bool) : RetVal;
+var {:layer 1,2} ret: [Invoc]RetVal;
 
 procedure {:layer 1} intro_readLin() returns (s: SetInvoc)
   ensures {:layer 1} s == Set_ofSeq(lin);
@@ -334,6 +339,12 @@ procedure {:layer 1} {:inline 1} intro_writeHb(n1: Invoc, n2: Invoc)
   modifies hb;
 {
   hb[n1] := hb[n1][n2 := true];
+}
+
+procedure {:layer 1} {:inline 1} intro_writeRet(n: Invoc, v: RetVal)
+  modifies ret;
+{
+  ret[n] := v;
 }
 
 
@@ -458,7 +469,7 @@ procedure {:atomic} {:layer 2} push_return_atomic({:linear "this"} this: Invoc) 
 procedure {:atomic} {:layer 2} pop_call_atomic({:linear "this"} this: Invoc) {}
 
 procedure {:atomic} {:layer 2} pop_atomic({:linear "this"} this: Invoc) returns (k: Key)
-  modifies lin, vis;
+  modifies lin, vis, ret;
 {
   var my_vis: SetInvoc;
 
@@ -469,6 +480,8 @@ procedure {:atomic} {:layer 2} pop_atomic({:linear "this"} this: Invoc) returns 
 
   lin := Seq_append(lin, this);
   vis[this] := my_vis;
+
+  ret[this] := RetVal_ofKey(k);
 }
 
 procedure {:atomic} {:layer 2} pop_return_atomic({:linear "this"} this: Invoc) {}
@@ -476,7 +489,7 @@ procedure {:atomic} {:layer 2} pop_return_atomic({:linear "this"} this: Invoc) {
 procedure {:atomic} {:layer 2} size_call_atomic({:linear "this"} this: Invoc) {}
 
 procedure {:atomic} {:layer 2} size_atomic({:linear "this"} this: Invoc) returns (s: int)
-  modifies lin, vis;
+  modifies lin, vis, ret;
 {
   var my_vis: SetInvoc;
 
@@ -488,6 +501,8 @@ procedure {:atomic} {:layer 2} size_atomic({:linear "this"} this: Invoc) returns
 
   lin := Seq_append(lin, this);
   vis[this] := my_vis;
+
+  ret[this] := RetVal_ofInt(s);
 }
 
 procedure {:atomic} {:layer 2} size_return_atomic({:linear "this"} this: Invoc) {}
@@ -498,6 +513,8 @@ procedure {:atomic} {:layer 2} size_return_atomic({:linear "this"} this: Invoc) 
 // ---------- Queue implementation: Shared state and invariant
 
 type Key;
+
+function RetVal_ofKey(Key) : RetVal;
 
 // Fields:
 var {:layer 0, 1} next: [Ref]Ref;
@@ -520,10 +537,6 @@ var {:layer 0, 1} tailTags: SetInvoc;
 var {:layer 1, 1} nextInvoc: [Ref]Invoc;
 // Witness for node that contains invoc in nextTags
 var {:layer 1, 1} nextRef: [Invoc]Ref;
-
-// Layer 1 witness mapping linearized and not-yet-returned ops to return value
-var {:layer 1,1} retK: [Invoc]Key;
-var {:layer 1,1} retS: [Invoc]int;
 
 // The set of invocations that have been called
 var {:layer 1,1} called: [Invoc]bool;
@@ -807,11 +820,6 @@ procedure {:yields} {:layer 1} {:refines "pop_call_atomic"}
   ensures {:layer 1} preLP(called, returned, lin, this);
   modifies called;
 {
-  yield;
-  assert {:layer 1} Inv(queueFP, usedFP, start, head, tail, next, data, nextTags, nextInvoc, nextRef, hb, lin, vis, absRefs, called, returned);
-  assert {:layer 1} (forall n1: Invoc :: hb[n1][this] ==> returned[n1]);
-  assert {:layer 1} (!called[this] && !returned[this]);
-
   call intro_writeCalled(this);
   yield;
   assert {:layer 1} Inv(queueFP, usedFP, start, head, tail, next, data, nextTags, nextInvoc, nextRef, hb, lin, vis, absRefs, called, returned);
@@ -870,6 +878,7 @@ procedure {:yields} {:layer 1} {:refines "pop_atomic"} pop({:linear "this"} this
         call my_vis := intro_readLin();
         call intro_writeLin(this);
         call intro_writeVis(this, my_vis);
+        call intro_writeRet(this, RetVal_ofKey(k));
 
         break;
       }
@@ -892,12 +901,6 @@ procedure {:yields} {:layer 1} {:refines "pop_return_atomic"}
   ensures {:layer 1} Inv(queueFP, usedFP, start, head, tail, next, data, nextTags, nextInvoc, nextRef, hb, lin, vis, absRefs, called, returned);
   modifies returned;
 {
-  yield;
-  assert {:layer 1} Inv(queueFP, usedFP, start, head, tail, next, data, nextTags, nextInvoc, nextRef, hb, lin, vis, absRefs, called, returned);
-  assert {:layer 1} postLP(called, returned, lin, this);
-  assert {:layer 1} (forall n1: Invoc :: {vis[this][n1]}
-    vis[this][n1] ==> Set_ofSeq(lin)[n1]);
-
   call intro_writeReturned(this);
 
   yield;
@@ -916,11 +919,6 @@ procedure {:yields} {:layer 1} {:refines "push_call_atomic"}
   ensures {:layer 1} preLP(called, returned, lin, this);
   modifies called;
 {
-  yield;
-  assert {:layer 1} Inv(queueFP, usedFP, start, head, tail, next, data, nextTags, nextInvoc, nextRef, hb, lin, vis, absRefs, called, returned);
-  assert {:layer 1} (forall n1: Invoc :: hb[n1][this] ==> returned[n1]);
-  assert {:layer 1} (!called[this] && !returned[this]);
-
   call intro_writeCalled(this);
   yield;
   assert {:layer 1} Inv(queueFP, usedFP, start, head, tail, next, data, nextTags, nextInvoc, nextRef, hb, lin, vis, absRefs, called, returned);
@@ -1002,12 +1000,6 @@ procedure {:yields} {:layer 1} {:refines "push_return_atomic"}
   ensures {:layer 1} Inv(queueFP, usedFP, start, head, tail, next, data, nextTags, nextInvoc, nextRef, hb, lin, vis, absRefs, called, returned);
   modifies returned;
 {
-  yield;
-  assert {:layer 1} Inv(queueFP, usedFP, start, head, tail, next, data, nextTags, nextInvoc, nextRef, hb, lin, vis, absRefs, called, returned);
-  assert {:layer 1} postLP(called, returned, lin, this);
-  assert {:layer 1} (forall n1: Invoc :: {vis[this][n1]}
-    vis[this][n1] ==> Set_ofSeq(lin)[n1]);
-
   call intro_writeReturned(this);
 
   yield;
@@ -1026,11 +1018,6 @@ procedure {:yields} {:layer 1} {:refines "size_call_atomic"}
   ensures {:layer 1} preLP(called, returned, lin, this);
   modifies called;
 {
-  yield;
-  assert {:layer 1} Inv(queueFP, usedFP, start, head, tail, next, data, nextTags, nextInvoc, nextRef, hb, lin, vis, absRefs, called, returned);
-  assert {:layer 1} (forall n1: Invoc :: hb[n1][this] ==> returned[n1]);
-  assert {:layer 1} (!called[this] && !returned[this]);
-
   call intro_writeCalled(this);
   yield;
   assert {:layer 1} Inv(queueFP, usedFP, start, head, tail, next, data, nextTags, nextInvoc, nextRef, hb, lin, vis, absRefs, called, returned);
@@ -1218,6 +1205,7 @@ procedure {:yields} {:layer 1} {:refines "size_atomic"} size({:linear "this"} th
   // Linearization point.
   call intro_writeLin(this);
   call intro_writeVis(this, my_vis);
+  call intro_writeRet(this, RetVal_ofInt(s));
 
   yield;
   assert {:layer 1} Inv(queueFP, usedFP, start, head, tail, next, data, nextTags, nextInvoc, nextRef, hb, lin, vis, absRefs, called, returned) && postLP(called, returned, lin, this);
@@ -1234,12 +1222,6 @@ procedure {:yields} {:layer 1} {:refines "size_return_atomic"}
   ensures {:layer 1} Inv(queueFP, usedFP, start, head, tail, next, data, nextTags, nextInvoc, nextRef, hb, lin, vis, absRefs, called, returned);
   modifies returned;
 {
-  yield;
-  assert {:layer 1} Inv(queueFP, usedFP, start, head, tail, next, data, nextTags, nextInvoc, nextRef, hb, lin, vis, absRefs, called, returned);
-  assert {:layer 1} postLP(called, returned, lin, this);
-  assert {:layer 1} (forall n1: Invoc :: {vis[this][n1]}
-    vis[this][n1] ==> Set_ofSeq(lin)[n1]);
-
   call intro_writeReturned(this);
 
   yield;
