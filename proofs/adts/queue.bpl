@@ -92,7 +92,8 @@ procedure {:atomic} {:layer 2} pop_atomic({:linear "this"} this: Invoc) returns 
   var my_vis: SetInvoc;
 
   // Satisfies its functional spec
-  assume k == Queue.stateArray(Queue.ofSeq(lin))[Queue.stateHead(Queue.ofSeq(lin))];
+  assume k == Queue.stateArray(Queue.ofSeq(Seq_restr(lin, my_vis)))[
+    Queue.stateHead(Queue.ofSeq(Seq_restr(lin, my_vis)))];
 
   assume Consistency.absolute(hb, lin, vis, this, my_vis);
 

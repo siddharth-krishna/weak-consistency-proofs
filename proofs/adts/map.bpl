@@ -89,13 +89,12 @@ procedure {:atomic} {:layer 2} hb_action_atomic(n1: Invoc, n2: Invoc)
 procedure {:atomic} {:layer 2} put_call_atomic({:linear "this"} this: Invoc) {}
 
 procedure {:atomic} {:layer 2} put_atomic(k: int, v: int, {:linear "this"} this: Invoc)
-  modifies abs, lin, vis;
+  modifies lin, vis;
 {
   var my_vis: SetInvoc;
 
   // Satisfies its functional spec
   assume true;
-  abs[k] := v;
 
   assume Consistency.absolute(hb, lin, vis, this, my_vis);
 
@@ -113,7 +112,7 @@ procedure {:atomic} {:layer 2} get_atomic(k: int, {:linear "this"} this: Invoc) 
   var my_vis: SetInvoc;
 
   // Get satisfies its functional spec
-  v := abs[k];
+  assume v == Map.ofSeq(Seq_restr(lin, my_vis))[k];
 
   assume Consistency.absolute(hb, lin, vis, this, my_vis);
 
