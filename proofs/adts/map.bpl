@@ -30,32 +30,34 @@ axiom (forall s: SeqInvoc, n: Invoc :: {Map.ofSeq(Seq_append(s, n))}
   ==> Map.ofSeq(Seq_append(s, n))
     == Map.ofSeq(s));
 
-// A function to restrict a SetInvoc to invocations involving key k
+// A function to restrict a SetInvoc to put invocations on key k
 function Map.restr(s: SetInvoc, k: int) returns (t: SetInvoc);
 
 // Map.restr is a subset
 axiom (forall s: SetInvoc, k: int :: Set_subset(Map.restr(s, k), s));
 
 // Map.restr is monotonic w.r.t subset
-axiom (forall s, t: SetInvoc, k: int :: Set_subset(s, t) ==> Set_subset(Map.restr(s, k), Map.restr(t, k)));
+axiom (forall s, t: SetInvoc, k: int :: Set_subset(s, t)
+  ==> Set_subset(Map.restr(s, k), Map.restr(t, k)));
 
-// Adding an invocation on k increases Map.restr
-axiom (forall q: SeqInvoc, n: Invoc :: {Map.restr(Set_ofSeq(Seq_append(q, n)), invoc_k(n))}
-  invoc_m(n) == Map.put ==>
-        Map.restr(Set_ofSeq(Seq_append(q, n)), invoc_k(n))
-          == Set_add(Map.restr(Set_ofSeq(q), invoc_k(n)), n));
+// Adding a put invocation on k increases Map.restr
+axiom (forall q: SeqInvoc, n: Invoc ::
+    {Map.restr(Set_ofSeq(Seq_append(q, n)), invoc_k(n))}
+  invoc_m(n) == Map.put
+  ==> Map.restr(Set_ofSeq(Seq_append(q, n)), invoc_k(n))
+      == Set_add(Map.restr(Set_ofSeq(q), invoc_k(n)), n));
 
-// Adding invocations not on k preserves Map.restr
+// Adding other invocations doesn't change Map.restr
 axiom (forall q: SeqInvoc, n: Invoc, k: int ::
   invoc_k(n) != k || invoc_m(n) != Map.put
-       ==> Map.restr(Set_ofSeq(Seq_append(q, n)), k) == Map.restr(Set_ofSeq(q), k));
+  ==> Map.restr(Set_ofSeq(Seq_append(q, n)), k) == Map.restr(Set_ofSeq(q), k));
 
-// The mapping of key k depends only invocations involving k
+// The mapping of key k depends only on Map.restr of k
 axiom (forall s: SetInvoc, q: SeqInvoc, k: int ::
-        Map.ofSeq(Seq_restr(q, s))[k] == Map.ofSeq(Seq_restr(q, Map.restr(s, k)))[k]);
+  Map.ofSeq(Seq_restr(q, s))[k] == Map.ofSeq(Seq_restr(q, Map.restr(s, k)))[k]);
 axiom (forall q: SeqInvoc, k: int ::
-        Map.ofSeq(Seq_restr(q, Set_ofSeq(q)))[k]
-        == Map.ofSeq(Seq_restr(q, Map.restr(Set_ofSeq(q), k)))[k]);
+  Map.ofSeq(Seq_restr(q, Set_ofSeq(q)))[k]
+  == Map.ofSeq(Seq_restr(q, Map.restr(Set_ofSeq(q), k)))[k]);
 
 // Taking union with a restriction of a super-set means restrictions are same
 axiom (forall s0, s1, t: SetInvoc, k: int ::

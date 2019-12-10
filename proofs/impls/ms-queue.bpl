@@ -60,6 +60,7 @@ function {:inline} Inv(queueFP: [Ref]bool, usedFP: [Ref]bool, start: Ref,
     hb: [Invoc][Invoc]bool, lin: SeqInvoc, vis: [Invoc]SetInvoc, absRefs: [int]Ref,
     called: [Invoc]bool, returned: [Invoc]bool) : bool
 {
+  // ---- Structural invariants for memory safety:
   // There is a list from head to null
   Btwn(next, head, head, null)
   && (forall x: Ref :: {queueFP[x]}{Btwn(next, head, x, null)}
@@ -72,7 +73,8 @@ function {:inline} Inv(queueFP: [Ref]bool, usedFP: [Ref]bool, start: Ref,
     known(x) ==> (usedFP[x] <==> (Btwn(next, start, x, head) && x != head)))
   // Terms needed for axiom triggers
   && known(start) && known(head) && known(tail) && known(null) && knownF(next)
-  // Relate abstract state to concrete state:
+
+  // ---- Relate abstract state to concrete state:
   && (forall i: int :: {absRefs[i]}
     i < -1 || Queue.stateTail(Queue.ofSeq(lin)) <= i <==> absRefs[i] == null)
   && absRefs[Queue.stateHead(Queue.ofSeq(lin)) - 1] == head
@@ -87,6 +89,8 @@ function {:inline} Inv(queueFP: [Ref]bool, usedFP: [Ref]bool, start: Ref,
   && (forall y: Ref :: {Btwn(next, head, y, null), next[y]} known(y) ==>
     (Btwn(next, head, y, null) && y != null && next[y] == null
     ==> y == absRefs[Queue.stateTail(Queue.ofSeq(lin)) - 1]))
+
+  // ---- Invariants on memory tags:
   // nextTags only contains singleton sets of push operations
   && (forall y: Ref :: {known(y)} known(y) ==>
     (Btwn(next, start, y, null) && y != null && next[y] != null
@@ -103,7 +107,13 @@ function {:inline} Inv(queueFP: [Ref]bool, usedFP: [Ref]bool, start: Ref,
     (invoc_m(n1) == Queue.push && invoc_m(n2) == Queue.push
     && Seq_elem(n1, lin) && Seq_elem(n2, lin)
     ==> (Seq_ord(lin, n1, n2)
-      <==> Btwn(next, nextRef[n1], nextRef[n1], nextRef[n2]) && nextRef[n1] != nextRef[n2])))
+      <==> Btwn(next, nextRef[n1], nextRef[n1], nextRef[n2])
+        && nextRef[n1] != nextRef[n2])))
+
+  // ---- nextRef and nextInvoc are inverses:
+  // && (forall n: Invoc :: {nextInvoc[nextRef[n]]} nextInvoc[nextRef[n]] == n)
+  && (forall y: Ref :: {nextRef[nextInvoc[y]]} known(y) ==>
+    (Btwn(next, start, y, null) && next[y] != null ==> nextRef[nextInvoc[y]] == y))
   // Default value for nextRef is null
   && (forall n: Invoc :: {nextRef[n]}
     !Seq_elem(n, lin) || invoc_m(n) != Queue.push ==> nextRef[n] == null)
@@ -112,10 +122,8 @@ function {:inline} Inv(queueFP: [Ref]bool, usedFP: [Ref]bool, start: Ref,
     Seq_elem(n1, lin) && Seq_elem(n2, lin)
     && invoc_m(n1) == Queue.push && invoc_m(n2) == Queue.push
     && nextRef[n1] == nextRef[n2] ==> n1 == n2)
-  // nextRef and nextInvoc are inverses
-  // && (forall n: Invoc :: {nextInvoc[nextRef[n]]} nextInvoc[nextRef[n]] == n)
-  && (forall y: Ref :: {nextRef[nextInvoc[y]]} known(y) ==>
-    (Btwn(next, start, y, null) && next[y] != null ==> nextRef[nextInvoc[y]] == y))
+
+  // ---- Invariants of the specification program:
   // lin only contains called things
   && (forall n: Invoc :: {Seq_elem(n, lin)} Seq_elem(n, lin) ==> called[n])
   // lin contains distinct elements
@@ -127,6 +135,7 @@ function {:inline} Inv(queueFP: [Ref]bool, usedFP: [Ref]bool, start: Ref,
   && (forall n1, n2 : Invoc :: called[n1] && hb[n2][n1] ==> returned[n2])
   // To establish precondition of intro_writeLin
   && (forall n: Invoc :: returned[n] ==> Seq_elem(n, lin))
+
   // Axiom of heap encoding
   && next[null] == null
 }
@@ -342,9 +351,6 @@ procedure {:yields} {:layer 1} {:refines "pop_atomic"} pop({:linear "this"} this
   var {:layer 1} my_vis: SetInvoc;
   var b: bool;
   var h, t, hn: Ref;
-
-  yield;
-  assert {:layer 1} Inv(queueFP, usedFP, start, head, tail, next, data, nextTags, nextInvoc, nextRef, hb, lin, vis, absRefs, called, returned) && preLP(called, returned, lin, this);
 
   yield;
   assert {:layer 1} Inv(queueFP, usedFP, start, head, tail, next, data, nextTags, nextInvoc, nextRef, hb, lin, vis, absRefs, called, returned) && preLP(called, returned, lin, this);

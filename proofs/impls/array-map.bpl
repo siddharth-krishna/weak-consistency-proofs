@@ -33,19 +33,20 @@ function {:inline} tableInv(table: [int]int, tabvis: [int]SetInvoc,
                             hb: [Invoc][Invoc]bool, lin: SeqInvoc, vis: [Invoc]SetInvoc, tabLen: int,
                             called: [Invoc]bool, returned: [Invoc]bool) : bool
 {
-  // tabvis[i] contains everything in lin of key i
-  (forall i: int :: 0 <= i && i < tabLen
-    ==> Set_subset(Map.restr(Set_ofSeq(lin), i), tabvis[i]))
-  // lin|tabvis[i] gives value of key i
-  && (forall i: int :: 0 <= i && i < tabLen
-    ==> Map.ofSeq(Seq_restr(lin, tabvis[i]))[i] == table[i])
   // tabvis only contains linearized things
-  && (forall i: int :: 0 <= i && i < tabLen
+  (forall i: int :: 0 <= i && i < tabLen
     ==> Set_subset(tabvis[i], Set_ofSeq(lin)))
+  // tabvis[i] contains everything in lin of key i
+  && (forall i: int :: 0 <= i && i < tabLen
+    ==> Set_subset(Map.restr(Set_ofSeq(lin), i), tabvis[i]))
   // tabvis[i] only has puts to key k
   && (forall i: int, n: Invoc :: 0 <= i && i < tabLen && tabvis[i][n]
     ==> invoc_m(n) == Map.put && invoc_k(n) == i)
+  // lin|tabvis[i] gives value of key i
+  && (forall i: int :: 0 <= i && i < tabLen
+    ==> Map.ofSeq(Seq_restr(lin, tabvis[i]))[i] == table[i])
 
+  // ---- Invariants of the specification program:
   // lin only contains called things
   && (forall n: Invoc :: {Seq_elem(n, lin)} Seq_elem(n, lin) ==> called[n])
   // lin contains distinct elements
