@@ -1,24 +1,26 @@
 # Weak-Consistency Proofs
 
 Provably correct implementations of weakly-consistent data structures.
+These proofs accompany the paper [Verifying Visibility-Based Weak Consistency](https://arxiv.org/abs/1911.01508) by Siddharth Krishna, Michael Emmi, Constantin Enea, and Dejan Jovanovic.
 
 ## Dependencies
 
-* [Boogie]
-* [Z3](https://github.com/Z3Prover/z3/). **Important**: need Z3 version 4.5.0, otherwise CIVL blows up!
+* [Boogie](https://github.com/boogie-org/boogie) at commit `7e779369`.
+* [Z3](https://github.com/Z3Prover/z3/).
+    **Important**: need Z3 version 4.5.0, otherwise CIVL blows up!
 
 ## Usage
 
 To verify the map implementation:
 
 ```bash
-$ boogie -noinfer -typeEncoding:m -useArrayTheory -vcsCores:8 proofs/prelude/*.bpl proofs/adts/map.bpl proofs/impls/array-map.bpl
+boogie -noinfer -typeEncoding:m -useArrayTheory -vcsCores:8 proofs/prelude/*.bpl proofs/adts/map.bpl proofs/impls/array-map.bpl
 ```
 
 To verify the queue implementation:
 
 ```bash
-$ boogie -noinfer -typeEncoding:m -useArrayTheory -vcsCores:8 proofs/prelude/*.bpl proofs/adts/queue.bpl proofs/impls/ms-queue.bpl
+boogie -noinfer -typeEncoding:m -useArrayTheory -vcsCores:8 proofs/prelude/*.bpl proofs/adts/queue.bpl proofs/impls/ms-queue.bpl
 ```
 
 <!-- ```bash
@@ -34,18 +36,6 @@ $ make
         with their specification.
 - `lib/`: Old version of array-map proof.
 - `misc/`: Contains miscellaneous boogie proofs and work-in-progress.
-    * `simpleConcurrent/`: Contains java packages to be used for testing with Violat.
-    * `build.sh`: Shell commands to be used for Violat testing.
-    * `treiber.bpl`: CIVL's proof of Treiber stack, slightly modified.
-    * `treiber-known.bpl`: Treiber stack proof, using Grasshopper's reachability axioms
-        and `known()` trigger trick.
-    * `queue-basic.bpl`: CIVL proof of simplified Java/Michael-Scott queue.
-        Uses reachability axioms from `treiber.bpl` and also its version of ownership
-        transfer. Need to add monotonic `size` operation.
-    * `queue-basic-known.bpl`: CIVL proof of simplified Java/Michael-Scott queue.
-        Uses Grasshopper's reachability axioms.
-        Has `push`, `pop`, and `size`, and proves memory safety.
-        Needs invariant tying abstract state to concrete state to prove monotonicity.
 
 ## Encoding
 
@@ -62,6 +52,3 @@ The state of these layer 2 programs (defined in `proofs/prelude/executions.bpl`)
 
 We maintain the invariant that the abstract execution is consistent with the sequential specification by checking that the return value stored in the "body" procedure is consistent with the abstract state as determined by the linearization so far.
 For example, `get_atomic` checks that the returned value `v` is equal to `abs[k]` where `abs` is the abstract key-value map determined by `lin`.
-
-
-[Boogie]: https://github.com/boogie-org/boogie
