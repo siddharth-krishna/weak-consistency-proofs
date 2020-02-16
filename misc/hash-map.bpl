@@ -568,7 +568,11 @@ procedure {:yields} {:layer 1} {:refines "hb_action_atomic"}
     hb_action(n1: Invoc, n2: Invoc)
   requires {:layer 1} returned[n1] && !called[n2];
 {
+  yield;
+  assert {:layer 1} returned[n1] && !called[n2];
+
   call intro_writeHb(n1, n2);
+
   yield;
 }
 
@@ -584,6 +588,11 @@ procedure {:yields} {:layer 1} {:refines "put_call_atomic"}
   ensures {:layer 1} preLP(called, returned, lin, this);
   modifies called;
 {
+  yield;
+  assert {:layer 1} tableInv(table, tabvis, hb, lin, vis, tabLen, called, returned);
+  assert {:layer 1} (forall n1: Invoc :: hb[n1][this] ==> returned[n1]);
+  assert {:layer 1} (!called[this] && !returned[this]);
+
   call intro_writeCalled(this);
 
   yield;
@@ -626,6 +635,12 @@ procedure {:yields} {:layer 1} {:refines "put_return_atomic"}
   ensures {:layer 1} tableInv(table, tabvis, hb, lin, vis, tabLen, called, returned);
   modifies returned;
 {
+  yield;
+  assert {:layer 1} tableInv(table, tabvis, hb, lin, vis, tabLen, called, returned);
+  assert {:layer 1} postLP(called, returned, lin, this);
+  assert {:layer 1} (forall n1: Invoc :: {vis[this][n1]}
+    vis[this][n1] ==> Set_ofSeq(lin)[n1]);
+
   call intro_writeReturned(this);
 
   yield;
@@ -644,6 +659,11 @@ procedure {:yields} {:layer 1} {:refines "get_call_atomic"}
   ensures {:layer 1} preLP(called, returned, lin, this);
   modifies called;
 {
+  yield;
+  assert {:layer 1} tableInv(table, tabvis, hb, lin, vis, tabLen, called, returned);
+  assert {:layer 1} (forall n1: Invoc :: hb[n1][this] ==> returned[n1]);
+  assert {:layer 1} (!called[this] && !returned[this]);
+
   call intro_writeCalled(this);
 
   yield;
@@ -687,6 +707,12 @@ procedure {:yields} {:layer 1} {:refines "get_return_atomic"}
   ensures {:layer 1} tableInv(table, tabvis, hb, lin, vis, tabLen, called, returned);
   modifies returned;
 {
+  yield;
+  assert {:layer 1} tableInv(table, tabvis, hb, lin, vis, tabLen, called, returned);
+  assert {:layer 1} postLP(called, returned, lin, this);
+  assert {:layer 1} (forall n1: Invoc :: {vis[this][n1]}
+    vis[this][n1] ==> Set_ofSeq(lin)[n1]);
+
   call intro_writeReturned(this);
 
   yield;
@@ -704,6 +730,11 @@ procedure {:yields} {:layer 1} {:refines "contains_call_atomic"}
   ensures {:layer 1} preLP(called, returned, lin, this);
   modifies called;
 {
+  yield;
+  assert {:layer 1} tableInv(table, tabvis, hb, lin, vis, tabLen, called, returned);
+  assert {:layer 1} (forall n1: Invoc :: hb[n1][this] ==> returned[n1]);
+  assert {:layer 1} (!called[this] && !returned[this]);
+
   call intro_writeCalled(this);
 
   yield;
@@ -824,6 +855,12 @@ procedure {:yields} {:layer 1} {:refines "contains_return_atomic"}
   ensures {:layer 1} tableInv(table, tabvis, hb, lin, vis, tabLen, called, returned);
   modifies returned;
 {
+  yield;
+  assert {:layer 1} tableInv(table, tabvis, hb, lin, vis, tabLen, called, returned);
+  assert {:layer 1} postLP(called, returned, lin, this);
+  assert {:layer 1} (forall n1: Invoc :: {vis[this][n1]}
+    vis[this][n1] ==> Set_ofSeq(lin)[n1]);
+
   call intro_writeReturned(this);
 
   yield;
