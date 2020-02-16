@@ -14,7 +14,7 @@ These proofs accompany the paper [Verifying Visibility-Based Weak Consistency](h
 To verify the map implementation:
 
 ```bash
-boogie -noinfer -typeEncoding:m -useArrayTheory -vcsCores:8 proofs/prelude/*.bpl proofs/adts/map.bpl proofs/impls/array-map.bpl
+boogie -noinfer -typeEncoding:m -useArrayTheory -vcsCores:8 proofs/prelude/*.bpl proofs/adts/map.bpl proofs/impls/hash-map.bpl
 ```
 
 To verify the queue implementation:
